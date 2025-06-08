@@ -160,18 +160,24 @@ La date/heure NTP est affichée périodiquement sur la console série.
 #include "STM32_WifiESP_Utils.h"
 #include "STM32_WifiESP_NTP.h"
 /* USER CODE END Includes */
+````
 
+````c
 /* USER CODE BEGIN PD */
 #define SSID "XXXXXX"      // Nom du réseau WiFi auquel se connecter
 #define PASSWORD "YYYYYY"  // Mot de passe du réseau WiFi
 #define LED_GPIO_PORT GPIOA
 #define LED_GPIO_PIN GPIO_PIN_5
 /* USER CODE END PD */
+````
 
+````c
 /* USER CODE BEGIN PV */
 uint8_t esp01_dma_rx_buf[ESP01_DMA_RX_BUF_SIZE]; // Tampon DMA pour la réception ESP01
 /* USER CODE END PV */
+````
 
+````c
 /* USER CODE BEGIN 0 */
 // Redirige printf vers l'UART2 (console série)
 int __io_putchar(int ch)
@@ -180,7 +186,9 @@ int __io_putchar(int ch)
     return ch;
 }
 /* USER CODE END 0 */
+````
 
+````c
 /* USER CODE BEGIN 2 */
 HAL_Delay(1000);
 printf("[ESP01] === Démarrage du programme ===\r\n");
@@ -237,7 +245,9 @@ HAL_Delay(1000);
 // Démarre la synchro NTP toutes les 60 secondes
 esp01_ntp_start_periodic_sync("pool.ntp.org", 2, 60, true);
 /* USER CODE END 2 */
+````
 
+````c
 /* USER CODE BEGIN WHILE */
 while (1)
 {
