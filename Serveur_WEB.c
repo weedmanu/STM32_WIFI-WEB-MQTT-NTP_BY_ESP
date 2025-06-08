@@ -1,6 +1,6 @@
 /* USER CODE BEGIN Includes */
-#include <stdio.h>		   // Inclusion de la bibliothèque standard pour les entrées/sorties (pour printf)
-#include "STM32_WifiESP.h" // Inclusion du fichier d'en-tête pour le driver ESP01
+#include <stdio.h>
+#include "STM32_WifiESP.h"
 #include "STM32_WifiESP_Utils.h"
 #include "STM32_WifiESP_HTTP.h"
 /* USER CODE END Includes */
@@ -20,10 +20,9 @@ uint8_t esp01_dma_rx_buf[ESP01_DMA_RX_BUF_SIZE]; // Tampon DMA pour la réceptio
 // Redirige printf vers l'UART2 (console série)
 int __io_putchar(int ch)
 {
-	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF); // Envoie le caractère sur l'UART2
-	return ch;											   // Retourne le caractère envoyé (pour compatibilité printf)
+	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
+	return ch;
 }
-
 // ==================== Constantes HTML et CSS ====================
 
 // --- Parties communes HTML ---
@@ -524,6 +523,7 @@ while (1)
 	esp01_process_requests();			  // Traite les requêtes HTTP entrantes
 	esp01_cleanup_inactive_connections(); // Nettoyage automatique des connexions inactives
 	HAL_Delay(10);						  // Petite pause pour éviter de surcharger le CPU
+}
 /* USER CODE END WHILE */
 
 /* USER CODE BEGIN Error_Handler_Debug */
@@ -534,4 +534,3 @@ while (1)
 	// Boucle infinie en cas d'erreur
 }
 /* USER CODE END Error_Handler_Debug */
-
