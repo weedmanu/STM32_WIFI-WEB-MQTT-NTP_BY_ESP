@@ -1,3 +1,118 @@
+# STM32_WifiESP
+
+**STM32_WifiESP** est une librairie C permettant à un microcontrôleur STM32 de piloter un module ESP01 (ESP8266) via UART/DMA pour des applications WiFi, serveur web, MQTT et NTP. Elle fournit une interface haut niveau pour la gestion du WiFi, la communication AT, la gestion d’un serveur HTTP embarqué, la connexion à un broker MQTT et la synchronisation NTP.
+
+---
+
+## Fonctionnalités principales
+
+- **Initialisation du module ESP01** (UART, DMA, buffers)
+- **Gestion du WiFi** : scan, connexion (STA/AP), DHCP ou IP statique
+- **Serveur web intégré** : gestion multi-connexion, routage HTTP, réponses personnalisées
+- **Gestion des connexions TCP** : suivi des clients, gestion des timeouts
+- **Client MQTT** : connexion à un broker, gestion de l’état MQTT
+- **Synchronisation NTP** : configuration, récupération et affichage de la date/heure
+- **Statistiques globales** : requêtes HTTP, erreurs, temps de réponse
+- **Utilitaires** : test AT, récupération d’IP, affichage du statut, gestion des buffers
+
+---
+
+## Structures et types principaux
+
+- `ESP01_Status_t` : Codes de retour des fonctions (OK, erreur, timeout, etc.)
+- `ESP01_WifiMode_t` : Modes WiFi supportés (STA, AP)
+- `esp01_stats_t` : Statistiques globales du driver (requêtes, erreurs, temps)
+- `connection_info_t` : Informations sur chaque connexion TCP active
+- `http_request_t` : Informations extraites d’un header +IPD (requête entrante)
+- `esp01_network_t` : Informations sur un réseau WiFi détecté
+- `http_parsed_request_t` : Représentation d’une requête HTTP parsée (méthode, chemin, query)
+- `esp01_route_handler_t` : Prototype d’un handler de route HTTP
+- `esp01_route_t` : Structure d’une route HTTP (chemin + handler)
+- `http_header_kv_t` : Couple clé/valeur pour un header HTTP
+- `esp01_mqtt_client_t` : Informations sur la connexion MQTT courante
+
+---
+
+## Variables globales
+
+- `g_stats` : Statistiques globales
+- `g_connections[]` : Tableau des connexions TCP actives
+- `g_connection_count` : Nombre de connexions actives
+- `g_server_port` : Port du serveur web
+- `g_wifi_mode` : Mode WiFi courant
+- `g_esp_uart` : UART utilisé pour l’ESP01
+- `g_debug_uart` : UART debug
+- `g_mqtt_client` : Client MQTT global
+- `g_accumulator[]` : Accumulateur de données RX
+- `g_acc_len` : Taille de l’accumulateur
+
+---
+
+## Fonctions principales
+
+### Initialisation & Communication
+
+- `esp01_init()` : Initialise le driver (UART, DMA, buffers)
+- `esp01_flush_rx_buffer()` : Vide le buffer de réception UART/DMA
+- `esp01_send_raw_command_dma()` : Envoie une commande AT brute et récupère la réponse
+
+### Gestion WiFi
+
+- `esp01_connect_wifi_config()` : Configure et connecte le module ESP01 au WiFi (STA ou AP)
+- `esp01_scan_networks()` : Scanne les réseaux WiFi à proximité
+- `esp01_print_wifi_networks()` : Affiche la liste des réseaux WiFi détectés
+
+### Serveur Web
+
+- `esp01_start_server_config()` : Démarre le serveur web intégré de l’ESP01
+- `esp01_stop_web_server()` : Arrête le serveur web intégré
+
+### Statut & Utilitaires
+
+- `esp01_test_at()` : Teste la communication AT avec l’ESP01
+- `esp01_get_at_version()` : Récupère la version du firmware AT
+- `esp01_get_connection_status()` : Vérifie le statut de connexion du module ESP01
+- `esp01_get_current_ip()` : Récupère l’adresse IP courante du module ESP01
+- `esp01_print_connection_status()` : Affiche le statut de connexion sur l’UART debug
+
+### NTP (synchronisation temps)
+
+- `esp01_configure_ntp()` : Configure le client NTP de l’ESP01
+- `esp01_ntp_sync_and_print()` : Configure NTP, récupère et affiche la date/heure
+- `esp01_get_ntp_time()` : Récupère la date/heure NTP depuis l’ESP01
+- `esp01_print_fr_local_datetime()` : Affiche la date/heure NTP en français
+- `esp01_print_local_datetime()` : Affiche la date/heure NTP avec décalage horaire
+
+---
+
+## Macros et constantes
+
+- **Taille des buffers** : DMA RX, HTTP, debug, commandes AT, etc.
+- **Timeouts** : court, moyen, long, WiFi, terminal, connexion
+- **HTTP** : codes, types MIME, chemins, headers, etc.
+- **Validation** : macro `VALIDATE_PARAM` pour vérifier les paramètres
+
+---
+
+## Organisation du code
+
+- **Fichier d’en-tête** : `STM32_WifiESP.h` (définitions, structures, prototypes)
+- **Implémentation** : à placer dans le fichier source correspondant (`STM32_WifiESP.c`)
+- **Dépendances** : nécessite `main.h` (HAL STM32), UART HAL, et standard C
+
+---
+
+## Remarques
+
+- La librairie est conçue pour être utilisée avec STM32Cube/HAL.
+- Le mode debug peut être activé/désactivé via la macro `ESP01_DEBUG`.
+- Les buffers doivent être correctement dimensionnés selon l’application.
+- La gestion multi-connexion TCP est supportée (jusqu’à 5 connexions simultanées).
+- Les handlers de routes HTTP permettent de personnaliser les réponses du serveur web.
+
+---
+
+
 # Serveur Web Avancé STM32 + ESP01
 
 Ce projet propose un serveur web avancé tournant sur une carte STM32, utilisant un module WiFi ESP01 piloté en UART.  
