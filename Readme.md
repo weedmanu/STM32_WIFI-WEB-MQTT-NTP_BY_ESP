@@ -754,40 +754,75 @@ status = esp01_flush_rx_buffer(500);
 printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
 HAL_Delay(100);
 
-// 3. Test de communication AT
+// 3. test de communication AT
 printf("[ESP01] === Test de communication AT ===\r\n");
 status = esp01_test_at();
 printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
-HAL_Delay(100);
 
 // 4. Test de version AT+GMR
 printf("[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
-char at_version[64];
+char at_version[128] = {0};
 status = esp01_get_at_version(at_version, sizeof(at_version));
 printf("[ESP01] >>> Version ESP01 : %s\r\n", at_version);
-HAL_Delay(100);
 
-// 5. Test du scan WiFi
-printf("[TEST] === Test du scan WiFi ===\r\n");
-esp01_print_wifi_networks(10);
-HAL_Delay(100);
+// 5. Connexion au réseau WiFi
+printf("[WIFI] === Connexion au réseau WiFi ===\r\n");
+status = esp01_connect_wifi_config(
+	ESP01_WIFI_MODE_STA, // mode
+	SSID,				 // ssid
+	PASSWORD,			 // password
+	true,				 // use_dhcp
+	NULL,				 // ip
+	NULL,				 // gateway
+	NULL				 // netmask
+);
+printf("[WIFI] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
 
-// 6. Connexion au réseau WiFi
-printf("[ESP01] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
-status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, SSID, PASSWORD, true, NULL, NULL, NULL);
-printf("[ESP01] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
-if (status != ESP01_OK)
+// 6. Activation du mode multi-connexion ET démarrage du serveur web
+printf("[WEB] === Activation multi-connexion + démarrage serveur web ===\r\n");
+ESP01_Status_t server_status = esp01_start_server_config(
+	true, // true = multi-connexion (CIPMUX=1)
+	80	  // port du serveur web
+);
+if (server_status != ESP01_OK)
 {
-    printf("[ESP01] !!! Échec de la connexion WiFi, arrêt du programme.\r\n");
-    while (1);
+	printf("[WEB] >>> ERREUR: CIPMUX/CIPSERVER\r\n");
+	Error_Handler();
 }
-HAL_Delay(500);
+else
+{
+	printf("[WEB] >>> Serveur web démarré sur le port 80\r\n");
+}
 
-// 7. Démarrage du serveur web
-printf("[WEB] === Démarrage du serveur web sur le port %d ===\r\n", 80);
-status = esp01_start_server_config(80, NULL, NULL);
-printf("[WEB] >>> Serveur web : %s\r\n", esp01_get_error_string(status));
+// 7. Ajout des routes HTTP
+printf("[WEB] === Ajout des routes HTTP ===\r\n");
+esp01_clear_routes();
+printf("[WEB] Ajout route /\r\n");
+esp01_add_route("/", page_root);
+printf("[WEB] Ajout route /status\r\n");
+esp01_add_route("/status", page_status);
+printf("[WEB] Ajout route /led\r\n");
+esp01_add_route("/led", page_led);
+printf("[WEB] Ajout route /testget\r\n");
+esp01_add_route("/testget", page_testget);
+printf("[WEB] Ajout route /device\r\n");
+esp01_add_route("/device", page_device);
 
+// 8. Vérification serveur ESP01
+esp01_print_connection_status(); // Affiche l'état des connexions ESP01
+
+// 9. Affichage de l'adresse IP
+printf("[WEB] === Serveur Web prêt ===\r\n");
+char ip[32];
+if (esp01_get_current_ip(ip, sizeof(ip)) == ESP01_OK)
+{
+	printf("[WEB] >>> Connectez-vous à : http://%s/\r\n", ip);
+}
+else
+{
+	printf("[WIFI] >>> Impossible de récupérer l'IP STA\r\n");
+	Error_Handler();
+}
 /* USER CODE END 2 */
 ````
 
