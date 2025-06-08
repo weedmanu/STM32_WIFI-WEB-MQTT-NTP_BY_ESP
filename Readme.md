@@ -4,6 +4,26 @@
 
 ---
 
+## Configuration des UART
+
+Le projet utilise **deux UART** pour la communication :
+
+- **UART1** : communication entre la STM32 et le module WiFi ESP01 (AT commands).
+- **UART2** : console série pour le debug (redirection de `printf`).
+
+### Exemple de configuration CubeMX
+
+- **UART1**
+  - Baudrate : 115200
+  - Mode : TX/RX
+  - DMA RX : activé en mode Circulaire (pour la réception efficace des trames AT)
+- **UART2**
+  - Baudrate : 115200
+  - Mode : TX/RX
+
+
+---
+
 ## Fonctionnalités principales
 
 - **Initialisation du module ESP01** (UART, DMA, buffers)
@@ -126,26 +146,6 @@ Il permet de contrôler une LED, d'afficher des informations système, de tester
 - Affichage dynamique des paramètres GET reçus
 - Statistiques serveur et informations système/réseau
 - Code modulaire, facilement extensible
-
-## Configuration des UART
-
-Le projet utilise **deux UART** pour la communication :
-
-- **UART1** : communication entre la STM32 et le module WiFi ESP01 (AT commands).
-- **UART2** : console série pour le debug (redirection de `printf`).
-
-### Exemple de configuration CubeMX
-
-- **UART1**
-  - Baudrate : 115200
-  - Mode : TX/RX
-  - DMA RX : activé en mode Circulaire (pour la réception efficace des trames AT)
-- **UART2**
-  - Baudrate : 115200
-  - Mode : TX/RX
-
-
----
 
 ## Extraits de code utilisateur (`USER CODE`)
 
