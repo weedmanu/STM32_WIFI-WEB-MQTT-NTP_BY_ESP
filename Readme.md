@@ -157,11 +157,10 @@ On inclut les fichiers d'en-tête nécessaires pour utiliser la librairie et ses
 
 
 ````c
-/* USER CODE BEGIN Includes */
-#include <stdio.h>
-#include "STM32_WifiESP.h"
-#include "STM32_WifiESP_Utils.h"
-#include "STM32_WifiESP_NTP.h"
+#include <stdio.h>                     // Pour utiliser printf, snprintf, etc.
+#include "STM32_WifiESP.h"             // Librairie principale ESP01
+#include "STM32_WifiESP_Utils.h"       // Fonctions utilitaires (affichage, helpers)
+#include "STM32_WifiESP_NTP.h"         // Fonctions de gestion NTP (synchronisation temps)
 /* USER CODE END Includes */
 ````
 
@@ -169,10 +168,10 @@ Définissez les paramètres du réseau WiFi et la LED utilisée :
 
 ````c
 /* USER CODE BEGIN PD */
-#define SSID "XXXXXX"      // Nom du réseau WiFi auquel se connecter
-#define PASSWORD "YYYYYY"  // Mot de passe du réseau WiFi
-#define LED_GPIO_PORT GPIOA
-#define LED_GPIO_PIN GPIO_PIN_5
+#define SSID "XXXXXX"      		// Nom du réseau WiFi auquel se connecter (remplacez par votre SSID)
+#define PASSWORD "YYYYYY"  		// Mot de passe du réseau WiFi (remplacez par votre mot de passe)
+#define LED_GPIO_PORT GPIOA 	// Port GPIO utilisé pour la LED (exemple : GPIOA)
+#define LED_GPIO_PIN GPIO_PIN_5 // Broche GPIO utilisée pour la LED (exemple : PIN 5)
 /* USER CODE END PD */
 ````
 
@@ -192,8 +191,8 @@ Redirigez printf vers l’UART2 pour afficher les logs sur la console série :
 // Redirige printf vers l'UART2 (console série)
 int __io_putchar(int ch)
 {
-    HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
-    return ch;
+	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF); 	// Envoie le caractère sur l'UART2 (console série)
+		return ch;											// Retourne le caractère
 }
 /* USER CODE END 0 */
 ````
@@ -202,7 +201,7 @@ Dans la fonction d’initialisation, effectuez toutes les étapes de configurati
 
 ````c
 /* USER CODE BEGIN 2 */
-HAL_Delay(1000);
+HAL_Delay(1000); // Petite pause au démarrage
 printf("[ESP01] === Démarrage du programme ===\r\n");
 HAL_Delay(500);
 
@@ -210,52 +209,49 @@ ESP01_Status_t status;
 
 // 1. Initialisation du driver ESP01
 printf("[ESP01] === Initialisation du driver ESP01 ===\r\n");
-status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
+status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE); // Initialise le driver avec les UART et le buffer DMA
 printf("[ESP01] >>> Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
 
 // 2. Flush du buffer RX
 printf("[ESP01] === Flush RX Buffer ===\r\n");
-status = esp01_flush_rx_buffer(500);
+status = esp01_flush_rx_buffer(500); // Vide le buffer de réception UART/DMA
 printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
 HAL_Delay(100);
 
 // 3. Test de communication AT
 printf("[ESP01] === Test de communication AT ===\r\n");
-status = esp01_test_at();
+status = esp01_test_at(); // Vérifie la communication AT avec l'ESP01
 printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
 HAL_Delay(100);
 
-// 4. Test de version AT+GMR
+// 4. Lecture version firmware ESP01
 printf("[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
 char at_version[64];
-status = esp01_get_at_version(at_version, sizeof(at_version));
+status = esp01_get_at_version(at_version, sizeof(at_version)); // Récupère la version du firmware AT
 printf("[ESP01] >>> Version ESP01 : %s\r\n", at_version);
 HAL_Delay(100);
 
-// 5. Test du scan WiFi
+// 5. Scan WiFi
 printf("[TEST] === Test du scan WiFi ===\r\n");
-esp01_print_wifi_networks(10);
+esp01_print_wifi_networks(10); // Affiche les réseaux WiFi détectés
 HAL_Delay(100);
 
 // 6. Connexion au réseau WiFi
 printf("[ESP01] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
-status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, SSID, PASSWORD, true, NULL, NULL, NULL);
+status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, SSID, PASSWORD, true, NULL, NULL, NULL); // Connexion au WiFi
 printf("[ESP01] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
 if (status != ESP01_OK)
 {
     printf("[ESP01] !!! Échec de la connexion WiFi, arrêt du programme.\r\n");
-    while (1);
+    while (1); // Boucle infinie en cas d'échec
 }
 HAL_Delay(500);
 
 // 7. NTP
 printf("[NTP] === NTP ===\r\n");
-
-// Synchronisation NTP une fois
-esp01_ntp_sync_once("pool.ntp.org", 2, true); // true = affichage FR
+esp01_ntp_sync_once("pool.ntp.org", 2, true); // Synchronisation NTP une fois (affichage FR)
 HAL_Delay(1000);
-// Démarre la synchro NTP toutes les 60 secondes
-esp01_ntp_start_periodic_sync("pool.ntp.org", 2, 60, true);
+esp01_ntp_start_periodic_sync("pool.ntp.org", 2, 60, true); // Synchronisation NTP toutes les 60s
 /* USER CODE END 2 */
 ````
 
@@ -754,10 +750,11 @@ status = esp01_flush_rx_buffer(500);
 printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
 HAL_Delay(100);
 
-// 3. test de communication AT
+// 3. Test de communication AT
 printf("[ESP01] === Test de communication AT ===\r\n");
 status = esp01_test_at();
 printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+HAL_Delay(100);
 
 // 4. Test de version AT+GMR
 printf("[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
@@ -973,10 +970,11 @@ status = esp01_flush_rx_buffer(500);
 printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
 HAL_Delay(100);
 
-// 3. test de communication AT
+// 3. Test de communication AT
 printf("[ESP01] === Test de communication AT ===\r\n");
 status = esp01_test_at();
 printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+HAL_Delay(100);
 
 // 4. Test de version AT+GMR
 printf("[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
@@ -1108,10 +1106,11 @@ status = esp01_flush_rx_buffer(500);
 printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
 HAL_Delay(100);
 
-// 3. test de communication AT
+// 3. Test de communication AT
 printf("[ESP01] === Test de communication AT ===\r\n");
 status = esp01_test_at();
 printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+HAL_Delay(100);
 
 // 4. Connexion au réseau WiFi
 printf("[WIFI] === Connexion au réseau WiFi ===\r\n");
@@ -1182,7 +1181,7 @@ while (1)
     HAL_Delay(1000);
 }
 /* USER CODE END WHILE */
-`````
+````
 
 
 
