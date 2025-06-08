@@ -832,9 +832,9 @@ Dans la boucle principale, gérez les requêtes HTTP et faites clignoter la LED�
 /* USER CODE BEGIN WHILE */
 while (1)
 {
-    esp01_webserver_periodic_task();
-    HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
-    HAL_Delay(1000);
+	esp01_process_requests();			  // Traite les requêtes HTTP entrantes
+	esp01_cleanup_inactive_connections(); // Nettoyage automatique des connexions inactives
+	HAL_Delay(10);						  // Petite pause pour éviter de surcharger le CPU
 /* USER CODE END WHILE */
 ````
 
