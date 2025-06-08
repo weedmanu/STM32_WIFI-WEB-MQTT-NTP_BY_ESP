@@ -254,7 +254,6 @@ while (1)
     esp01_ntp_periodic_task();
     HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
     HAL_Delay(1000);
-}
 /* USER CODE END WHILE */
 ````
 
@@ -279,18 +278,24 @@ Il répond à des requêtes HTTP avec des pages web simples.
 #include "STM32_WifiESP_Utils.h"
 #include "STM32_WifiESP_WebServer.h"
 /* USER CODE END Includes */
+````
 
+````c
 /* USER CODE BEGIN PD */
 #define SSID "XXXXXX"      // Nom du réseau WiFi auquel se connecter
 #define PASSWORD "YYYYYY"  // Mot de passe du réseau WiFi
 #define LED_GPIO_PORT GPIOA
 #define LED_GPIO_PIN GPIO_PIN_5
 /* USER CODE END PD */
+````
 
+````c
 /* USER CODE BEGIN PV */
 uint8_t esp01_dma_rx_buf[ESP01_DMA_RX_BUF_SIZE]; // Tampon DMA pour la réception ESP01
 /* USER CODE END PV */
+````
 
+````c
 /* USER CODE BEGIN 0 */
 // Redirige printf vers l'UART2 (console série)
 int __io_putchar(int ch)
@@ -300,7 +305,9 @@ int __io_putchar(int ch)
 }
 
 /* USER CODE END 0 */
+````
 
+````c
 /* USER CODE BEGIN 2 */
 HAL_Delay(1000);
 printf("[ESP01] === Démarrage du programme ===\r\n");
@@ -354,14 +361,15 @@ status = esp01_start_server_config(80, NULL, NULL);
 printf("[WEB] >>> Serveur web : %s\r\n", esp01_get_error_string(status));
 
 /* USER CODE END 2 */
+````
 
+````c
 /* USER CODE BEGIN WHILE */
 while (1)
 {
     esp01_webserver_periodic_task();
     HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
     HAL_Delay(1000);
-}
 /* USER CODE END WHILE */
 ````
 
@@ -386,18 +394,24 @@ Ce programme montre comment publier des messages sur un broker MQTT depuis la ST
 #include "STM32_WifiESP_Utils.h"
 #include "STM32_WifiESP_MQTT.h"
 /* USER CODE END Includes */
+````
 
+````c
 /* USER CODE BEGIN PD */
 #define SSID "XXXXXX"            // Nom du réseau WiFi auquel se connecter
 #define PASSWORD "YYYYYY"        // Mot de passe du réseau WiFi
 #define LED_GPIO_PORT GPIOA
 #define LED_GPIO_PIN GPIO_PIN_5
 /* USER CODE END PD */
+````
 
+````c
 /* USER CODE BEGIN PV */
 uint8_t esp01_dma_rx_buf[ESP01_DMA_RX_BUF_SIZE]; // Tampon DMA pour la réception ESP01
 /* USER CODE END PV */
+````
 
+````c
 /* USER CODE BEGIN 0 */
 // Redirige printf vers l'UART2 (console série)
 int __io_putchar(int ch)
@@ -473,7 +487,9 @@ static void test_mqtt(void)
     }
 }
 /* USER CODE END 0 */
+````
 
+````c
 /* USER CODE BEGIN 2 */
 HAL_Delay(1000);
 printf("[ESP01] === Démarrage du programme ===\r\n");
@@ -542,13 +558,14 @@ else
 }
 test_mqtt();
 /* USER CODE END 2 */
+````
 
+````c
 /* USER CODE BEGIN WHILE */
 while (1)
 {
     HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
     HAL_Delay(1000);
-}
 /* USER CODE END WHILE */
 ````
 
@@ -574,18 +591,24 @@ Ce programme montre comment souscrire à un topic MQTT et traiter les messages r
 #include "STM32_WifiESP_Utils.h"
 #include "STM32_WifiESP_MQTT.h"
 /* USER CODE END Includes */
+````
 
+````c
 /* USER CODE BEGIN PD */
 #define SSID "XXXXXX"      // Nom du réseau WiFi auquel se connecter
 #define PASSWORD "YYYYYY"  // Mot de passe du réseau WiFi
 #define LED_GPIO_PORT GPIOA
 #define LED_GPIO_PIN GPIO_PIN_5
 /* USER CODE END PD */
+````
 
+````c
 /* USER CODE BEGIN PV */
 uint8_t esp01_dma_rx_buf[ESP01_DMA_RX_BUF_SIZE];
 /* USER CODE END PV */
+````
 
+````c
 /* USER CODE BEGIN 0 */
 // Redirige printf vers l'UART2 (console série)
 int __io_putchar(int ch)
@@ -599,7 +622,9 @@ void mqtt_message_callback(const char *topic, const char *payload)
     printf("[MQTT] Message reçu sur %s : %s\r\n", topic, payload);
 }
 /* USER CODE END 0 */
+````
 
+````c
 /* USER CODE BEGIN 2 */
 HAL_Delay(1000);
 printf("[ESP01] === Démarrage du programme ===\r\n");
@@ -681,7 +706,9 @@ if (status != ESP01_OK)
 // 8. Enregistrement du callback de réception MQTT
 esp01_mqtt_set_message_callback(mqtt_message_callback);
 /* USER CODE END 2 */
+````
 
+````c
 /* USER CODE BEGIN WHILE */
 while (1)
 {
