@@ -23,11 +23,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h> // Pour printf, snprintf, etc.
-#include <string.h>
+#include <stdio.h>		   // Pour printf, snprintf, etc.
 #include "STM32_WifiESP.h" // Fonctions du driver ESP01
-#include "STM32_WifiESP_WIFI.h"
-#include "STM32_WifiESP_NTP.h" // Fonctions NTP haut niveau
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +39,7 @@
 #define LED_GPIO_PORT GPIOA			  // Port GPIO de la LED
 #define LED_GPIO_PIN GPIO_PIN_5		  // Pin GPIO de la LED
 #define NTP_PERIOD_S 20				  // Par exemple, 10 secondes entre chaque synchro
+#define MY_DMA_RX_BUF_SIZE 8192
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -111,87 +109,106 @@ int main(void)
 	MX_USART2_UART_Init();
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
-	HAL_Delay(1000);
-	printf("[ESP01] === Démarrage du programme ===\r\n");
-	HAL_Delay(500);
-
 	ESP01_Status_t status;
+	char buf[256];
 
-	// 1. Initialisation du driver ESP01
+	// 1. Initialisation du driver
 	printf("[ESP01] === Initialisation du driver ESP01 ===\r\n");
 	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-	printf("[ESP01] >>> Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(1000); // <-- Ajoute ce délai pour laisser le temps à l'ESP01 de démarrer
+	printf("[ESP01] >>> Initialisation : %s\r\n", esp01_get_error_string(status));
+	HAL_Delay(500);
 
-	// 2. Flush du buffer RX
-	printf("[ESP01] === Flush RX Buffer ===\r\n");
-	status = esp01_flush_rx_buffer(500);
-	printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(1000);
-
-	// 3. Test de communication AT
-	printf("[ESP01] === Test de communication AT ===\r\n");
+	// 2. Test AT
+	printf("[ESP01] === Test AT ===\r\n");
 	status = esp01_test_at();
 	printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+	HAL_Delay(500);
+
+	// 3. Reset logiciel
+	printf("[ESP01] === Reset logiciel (AT+RST) ===\r\n");
+	status = esp01_reset();
+	printf("[ESP01] >>> Reset : %s\r\n", esp01_get_error_string(status));
 	HAL_Delay(1000);
 
-	// 6. Connexion au réseau WiFi
-	printf("[ESP01] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
-	status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, SSID, PASSWORD, true, NULL, NULL, NULL);
-	printf("[ESP01] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
-	if (status != ESP01_OK)
+	// 4. Restore usine
+	printf("[ESP01] === Restore usine (AT+RESTORE) ===\r\n");
+	status = esp01_restore();
+	printf("[ESP01] >>> Restore : %s\r\n", esp01_get_error_string(status));
+	HAL_Delay(2000);
+
+	// 5. Version firmware
+	printf("[ESP01] === Lecture version firmware ===\r\n");
+	status = esp01_get_at_version(buf, sizeof(buf));
+	printf("[ESP01] >>> Version : %s\r\n", esp01_get_error_string(status));
+	printf("%s\r\n", buf);
+
+	// 6. Lecture config UART
+	printf("[ESP01] === Lecture config UART ===\r\n");
+	status = esp01_get_uart_config(buf, sizeof(buf));
+	printf("[ESP01] >>> UART config brute : %s (%s)\r\n", esp01_get_error_string(status), buf);
+	char uart_str[128];
+	if (status == ESP01_OK)
 	{
-		printf("[ESP01] >>>  !!! Échec de la connexion WiFi, arrêt du programme.\r\n");
-		while (1)
-			;
+		esp01_uart_config_to_string(buf, uart_str, sizeof(uart_str));
+		printf("[ESP01] >>> UART config lisible : %s\r\n", uart_str);
 	}
-	HAL_Delay(1000);
 
-	// 7. Configuration NTP
-	printf("[NTP] === Configuration NTP ===\r\n");
-	status = esp01_configure_ntp("fr.pool.ntp.org", 2, NTP_PERIOD_S);
-	printf("[ESP01] >>> Config NTP : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(1000);
+	// 7. Changement config UART (exemple, à adapter selon ton besoin)
+	// status = esp01_set_uart_config(115200, 8, 1, 0, 0);
+	// printf("[ESP01] >>> Set UART config : %s\r\n", esp01_get_error_string(status));
 
-	// 8. Synchronisation NTP One Shot
-	printf("[NTP] === NTP One Shot ===\r\n");
-	char datetime_ntp[64];
-	ESP01_Status_t ntp_status = esp01_get_ntp_time(datetime_ntp, sizeof(datetime_ntp));
-	if (ntp_status == ESP01_OK && strlen(datetime_ntp) > 0 && strstr(datetime_ntp, "1970") == NULL)
-	{
-		char fr_buf[128];
-		esp01_parse_fr_local_datetime(datetime_ntp, fr_buf, sizeof(fr_buf));
-		printf("[NTP] >>> %s\n", fr_buf);
-	}
-	else
-	{
-		printf("[ESP01] >>> Erreur lors de la récupération de l'heure NTP\n");
-	}
-	HAL_Delay(1000);
+	// 8. Lecture mode sommeil
+	int sleep_mode = 0; // <-- Ajoute cette ligne AVANT d'utiliser sleep_mode
+	status = esp01_get_sleep_mode(&sleep_mode);
+	printf("[ESP01] === Mode sommeil : %s (%d)\r\n", esp01_get_error_string(status), sleep_mode);
+	char sleep_str[64];
+	esp01_sleep_mode_to_string(sleep_mode, sleep_str, sizeof(sleep_str));
+	printf("[ESP01] >>> Mode sommeil lisible : %s\r\n", sleep_str);
 
-	// 9. Synchronisation NTP périodique
-	printf("[NTP] === Synchronisation NTP périodique ===\r\n");
-	esp01_ntp_start_periodic_sync("fr.pool.ntp.org", 2, NTP_PERIOD_S, true);
+	// 9. Changement mode sommeil (exemple)
+	// status = esp01_set_sleep_mode(0);
+	// printf("[ESP01] >>> Set sleep mode : %s\r\n", esp01_get_error_string(status));
+
+	// 10. Lecture puissance RF
+	int rf_dbm = 0;
+	status = esp01_get_rf_power(&rf_dbm);
+	printf("[ESP01] === Puissance RF : %s (%d dBm)\r\n", esp01_get_error_string(status), rf_dbm);
+
+	// 11. Changement puissance RF (exemple)
+	// status = esp01_set_rf_power(82);
+	// printf("[ESP01] >>> Set RF power : %s\r\n", esp01_get_error_string(status));
+
+	// 12. Lecture niveau log système
+	int syslog = 0;
+	status = esp01_get_syslog(&syslog);
+	printf("[ESP01] === Niveau log système : %s (%d)\r\n", esp01_get_error_string(status), syslog);
+	char syslog_str[32];
+	esp01_syslog_to_string(syslog, syslog_str, sizeof(syslog_str));
+	printf("[ESP01] >>> Niveau log lisible : %s\r\n", syslog_str);
+
+	// 13. Changement niveau log (exemple)
+	// status = esp01_set_syslog(0);
+	// printf("[ESP01] >>> Set syslog : %s\r\n", esp01_get_error_string(status));
+
+	// 14. Lecture RAM libre
+	uint32_t free_ram = 0;
+	status = esp01_get_sysram(&free_ram);
+	printf("[ESP01] === RAM libre : %s (%lu octets)\r\n", esp01_get_error_string(status), free_ram);
+
+	// 15. Deep sleep (exemple, attention le module ne répondra plus pendant la durée)
+	// status = esp01_deep_sleep(2000);
+	// printf("[ESP01] >>> Deep sleep : %s\r\n", esp01_get_error_string(status));
+
+	char cmd_list[8192];
+	status = esp01_get_cmd_list(cmd_list, sizeof(cmd_list));
+	printf("[ESP01] === Liste des commandes AT : %s\r\n", esp01_get_error_string(status));
+	printf("%s\r\n", cmd_list);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		esp01_ntp_periodic_task();
-
-		// Affichage de la date/heure si une synchro NTP a eu lieu
-		if (esp01_ntp_is_updated())
-		{
-			const char *datetime_ntp = esp01_ntp_get_last_datetime();
-			char fr_buf[128];
-			esp01_parse_fr_local_datetime(datetime_ntp, fr_buf, sizeof(fr_buf));
-			printf("[NTP] >>> %s\n", fr_buf);
-			esp01_ntp_clear_updated_flag();
-		}
-
-		HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
-		HAL_Delay(1000);
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
