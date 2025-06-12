@@ -14,12 +14,7 @@
 #include <stdint.h>
 
 // ==================== MODES WIFI ====================
-typedef enum
-{
-    ESP01_WIFI_MODE_STA = 1,   ///< Station (client)
-    ESP01_WIFI_MODE_AP = 2,    ///< Point d'accès
-    ESP01_WIFI_MODE_STA_AP = 3 ///< Station + AP simultané
-} ESP01_WifiMode_t;
+
 
 typedef struct
 {
