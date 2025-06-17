@@ -27,7 +27,6 @@
 #include "STM32_WifiESP.h" // Fonctions de base ESP01
 #include "STM32_WifiESP_WIFI.h"
 #include "STM32_WifiESP_HTTP.h" // Pour compatibilité éventuelle HTTP
-#include "STM32_WifiESP_MQTT.h" // Header MQTT
 
 // ==================== DEFINES SPÉCIFIQUES MQTT ====================
 

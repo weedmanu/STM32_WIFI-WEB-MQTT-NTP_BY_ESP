@@ -1,355 +1,285 @@
 /**
  ******************************************************************************
  * @file    STM32_WifiESP_NTP.c
- * @author  weedm
- * @version 1.1.0
- * @date    8 juin 2025
- * @brief   Implémentation de la gestion NTP pour le module ESP01 WiFi.
- *
- * @details
- * Ce fichier contient l'implémentation des fonctions pour gérer la
- * synchronisation de l'heure via NTP avec un module ESP01 connecté à un
- * microcontrôleur STM32. Il propose des fonctions haut niveau pour la
- * configuration du serveur NTP, la récupération et le parsing de la date/heure,
- * la gestion de la synchronisation périodique et l'affichage.
- *
- * @note
- * - Compatible STM32CubeIDE.
- * - Nécessite la bibliothèque STM32_WifiESP.h.
- *
- * @copyright
- * La licence de ce code est libre.
+ * @author  Weedman
+ * @brief   Gestion NTP pour ESP01 sur STM32 (implémentation)
  ******************************************************************************
  */
 
-// ==================== INCLUSIONS ====================
-#include "STM32_WifiESP_NTP.h" // Header principal NTP
-#include <stdio.h>			   // Pour printf, snprintf
-#include <string.h>			   // Pour strncpy, memset, strstr, etc.
-#include <time.h>			   // Pour structures de temps
+#include "STM32_WifiESP_NTP.h"
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
 
-// ==================== VARIABLES STATIQUES ====================
-static char g_ntp_server[64] = "pool.ntp.org"; // Nom du serveur NTP utilisé
-static int g_ntp_timezone = 0;				   // Décalage horaire (UTC)
-static uint32_t g_ntp_interval_ms = 60000;	   // Intervalle de synchro périodique en ms
-static uint8_t g_ntp_periodic_enabled = 0;	   // Flag d'activation de la synchro périodique
-static bool g_ntp_print_fr = false;			   // Affichage en français ou non
-static uint32_t last_sync = 0;				   // Timestamp de la dernière synchro
+/* ==================== VARIABLES STATIQUES ==================== */
 
-static char g_last_ntp_datetime[ESP01_MAX_RESP_BUF] = ""; // Dernière date/heure NTP reçue
-static volatile uint8_t g_last_ntp_updated = 0;			  // Flag de mise à jour de la date/heure
+static esp01_ntp_config_t g_ntp_config = {
+    .server = ESP01_NTP_DEFAULT_SERVER,
+    .timezone = 0,
+    .period_s = ESP01_NTP_DEFAULT_PERIOD_S};
 
-// ==================== API NTP ====================
+static char g_last_datetime[ESP01_NTP_DATETIME_BUF_SIZE] = "";
+static uint8_t g_ntp_updated = 0;
 
-/**
- * @brief Configure le serveur NTP et le fuseau horaire.
- */
-ESP01_Status_t esp01_configure_ntp(const char *ntp_server, int timezone_offset, int sync_period_s)
+/* ==================== FONCTIONS NTP ==================== */
+
+ESP01_Status_t esp01_configure_ntp(const char *ntp_server, int timezone, int sync_period_s)
 {
-	char cmd[ESP01_MAX_CMD_BUF];   // Buffer pour la commande AT
-	char resp[ESP01_MAX_RESP_BUF]; // Buffer pour la réponse
-
-	snprintf(cmd, sizeof(cmd), "AT+CIPSNTPCFG=1,%d,\"%s\"", timezone_offset, ntp_server ? ntp_server : "pool.ntp.org"); // Prépare la commande AT
-	_esp_login("[NTP] === Configuration NTP envoyée ===");																// Log étape importante
-	_esp_login("[NTP] >>> %s", cmd);																					// Log la commande envoyée
-
-	ESP01_Status_t status = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), "OK", ESP01_TIMEOUT_MEDIUM); // Envoie la commande AT
-	if (status != ESP01_OK)
-	{
-		_esp_login("[NTP][DEBUG] >>> Erreur configuration NTP"); // Log erreur détaillée
-		return status;
-	}
-
-	return status;
+    ESP01_LOG_INFO("NTP", "Configuration NTP : serveur=%s, timezone=%d, period=%d", ntp_server, timezone, sync_period_s);
+    VALIDATE_PARAM(ntp_server && strlen(ntp_server) < ESP01_NTP_MAX_SERVER_LEN, ESP01_INVALID_PARAM);
+    if (esp01_check_buffer_size(strlen(ntp_server), ESP01_NTP_MAX_SERVER_LEN - 1) != ESP01_OK)
+    {
+        ESP01_LOG_ERROR("NTP", "Dépassement de la taille du buffer serveur NTP");
+        ESP01_RETURN_ERROR("NTP_CONFIG", ESP01_BUFFER_OVERFLOW);
+    }
+    strncpy(g_ntp_config.server, ntp_server, ESP01_NTP_MAX_SERVER_LEN - 1);
+    g_ntp_config.server[ESP01_NTP_MAX_SERVER_LEN - 1] = '\0';
+    g_ntp_config.timezone = timezone;
+    g_ntp_config.period_s = sync_period_s;
+    ESP01_LOG_INFO("NTP", "Configuration NTP appliquée");
+    return ESP01_OK;
 }
 
-/**
- * @brief Récupère la date/heure NTP depuis l'ESP01.
- */
+ESP01_Status_t esp01_ntp_start_sync(bool periodic)
+{
+    ESP01_LOG_INFO("NTP", "Démarrage de la synchronisation NTP (periodic=%d)", periodic);
+    ESP01_Status_t st = esp01_apply_ntp_config(
+        1,
+        g_ntp_config.timezone,
+        g_ntp_config.server,
+        g_ntp_config.period_s);
+
+    if (st != ESP01_OK)
+    {
+        ESP01_LOG_ERROR("NTP", "Echec de l'application de la configuration NTP (code=%d)", st);
+        ESP01_RETURN_ERROR("NTP_START_SYNC", st);
+    }
+
+    if (!periodic)
+    {
+        HAL_Delay(2000);
+
+        char buf[ESP01_NTP_DATETIME_BUF_SIZE];
+        for (int i = 0; i < 3; ++i)
+        {
+            st = esp01_get_ntp_time(buf, sizeof(buf));
+            if (st == ESP01_OK && strlen(buf) > 0)
+            {
+                if (esp01_check_buffer_size(strlen(buf), ESP01_NTP_DATETIME_BUF_SIZE - 1) != ESP01_OK)
+                {
+                    ESP01_LOG_ERROR("NTP", "Dépassement de la taille du buffer datetime NTP");
+                    ESP01_RETURN_ERROR("NTP_START_SYNC", ESP01_BUFFER_OVERFLOW);
+                }
+                strncpy(g_last_datetime, buf, ESP01_NTP_DATETIME_BUF_SIZE - 1);
+                g_last_datetime[ESP01_NTP_DATETIME_BUF_SIZE - 1] = '\0';
+                g_ntp_updated = 1;
+                ESP01_LOG_INFO("NTP", "Synchronisation NTP réussie : %s", g_last_datetime);
+                return ESP01_OK;
+            }
+            ESP01_LOG_WARN("NTP", "Tentative %d de récupération de l'heure NTP échouée", i + 1);
+            HAL_Delay(1000);
+        }
+        ESP01_LOG_ERROR("NTP", "Impossible de récupérer l'heure NTP après 3 tentatives");
+        ESP01_RETURN_ERROR("NTP_START_SYNC", ESP01_FAIL);
+    }
+    ESP01_LOG_INFO("NTP", "Synchronisation NTP périodique activée");
+    return ESP01_OK;
+}
+
+void esp01_print_ntp_config(void)
+{
+    ESP01_LOG_INFO("NTP", "Affichage de la configuration NTP");
+    ESP01_LOG_INFO("NTP", "Serveur : %s", g_ntp_config.server);
+    ESP01_LOG_INFO("NTP", "Fuseau horaire : %d", g_ntp_config.timezone);
+    ESP01_LOG_INFO("NTP", "Période de synchro (s) : %d", g_ntp_config.period_s);
+}
+
+void esp01_ntp_print_last_datetime_fr(void)
+{
+    ESP01_LOG_INFO("NTP", "Affichage de la dernière date/heure NTP (FR)");
+    const char *datetime_ntp = esp01_ntp_get_last_datetime();
+    ntp_datetime_fr_t dt;
+    if (!datetime_ntp || strlen(datetime_ntp) == 0)
+    {
+        ESP01_LOG_WARN("NTP", "Date NTP non disponible");
+        return;
+    }
+    if (esp01_parse_ntp_esp01(datetime_ntp, &dt) == ESP01_OK)
+        esp01_print_datetime_fr(&dt);
+    else
+        ESP01_LOG_WARN("NTP", "Date NTP invalide");
+}
+
+void esp01_ntp_print_last_datetime_en(void)
+{
+    ESP01_LOG_INFO("NTP", "Affichage de la dernière date/heure NTP (EN)");
+    const char *datetime_ntp = esp01_ntp_get_last_datetime();
+    ntp_datetime_fr_t dt;
+    if (!datetime_ntp || strlen(datetime_ntp) == 0)
+    {
+        ESP01_LOG_WARN("NTP", "NTP date not available");
+        return;
+    }
+    if (esp01_parse_ntp_esp01(datetime_ntp, &dt) == ESP01_OK)
+        esp01_print_datetime_en(&dt);
+    else
+        ESP01_LOG_WARN("NTP", "Invalid NTP date");
+}
+
+const char *esp01_ntp_get_last_datetime(void)
+{
+    ESP01_LOG_DEBUG("NTP", "Lecture de la dernière date/heure NTP : %s", g_last_datetime);
+    return g_last_datetime;
+}
+
+uint8_t esp01_ntp_is_updated(void)
+{
+    ESP01_LOG_DEBUG("NTP", "Flag de mise à jour NTP : %d", g_ntp_updated);
+    return g_ntp_updated;
+}
+
+void esp01_ntp_clear_updated_flag(void)
+{
+    ESP01_LOG_INFO("NTP", "Réinitialisation du flag de mise à jour NTP");
+    g_ntp_updated = 0;
+}
+
+ESP01_Status_t esp01_parse_ntp_esp01(const char *datetime_ntp, ntp_datetime_fr_t *dt)
+{
+    ESP01_LOG_DEBUG("NTP", "Parsing de la date NTP : %s", datetime_ntp);
+    VALIDATE_PARAM(datetime_ntp && dt, ESP01_INVALID_PARAM);
+
+    char mois[8], jour[8];
+    int res = sscanf(datetime_ntp, "%s %s %d %d:%d:%d %d",
+                     jour, mois, &dt->day, &dt->hour, &dt->min, &dt->sec, &dt->year);
+    if (res != 7)
+    {
+        ESP01_LOG_ERROR("NTP", "Format de date NTP invalide");
+        ESP01_RETURN_ERROR("NTP_PARSE", ESP01_FAIL);
+    }
+
+    static const char *mois_en[] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    dt->month = 0;
+    for (int i = 0; i < 12; ++i)
+    {
+        if (strncmp(mois, mois_en[i], 3) == 0)
+        {
+            dt->month = i + 1;
+            break;
+        }
+    }
+    if (dt->month == 0)
+    {
+        ESP01_LOG_ERROR("NTP", "Mois NTP inconnu : %s", mois);
+        ESP01_RETURN_ERROR("NTP_PARSE", ESP01_FAIL);
+    }
+
+    static const char *jours_en[] = {
+        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    dt->wday = -1;
+    for (int i = 0; i < 7; ++i)
+    {
+        if (strncmp(jour, jours_en[i], 3) == 0)
+        {
+            dt->wday = i;
+            break;
+        }
+    }
+    if (dt->wday == -1)
+    {
+        ESP01_LOG_ERROR("NTP", "Jour NTP inconnu : %s", jour);
+        ESP01_RETURN_ERROR("NTP_PARSE", ESP01_FAIL);
+    }
+
+    ESP01_LOG_DEBUG("NTP", "Parsing réussi : %02d/%02d/%04d %02d:%02d:%02d (wday=%d)",
+                    dt->day, dt->month, dt->year, dt->hour, dt->min, dt->sec, dt->wday);
+    return ESP01_OK;
+}
+
+void esp01_print_datetime_fr(const ntp_datetime_fr_t *dt)
+{
+    static const char *jours_fr[] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
+    static const char *mois_fr[] = {"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"};
+    ESP01_LOG_INFO("NTP", "%s %02d %s %04d à %02dh%02d:%02d",
+                   jours_fr[dt->wday], dt->day, mois_fr[dt->month - 1], dt->year, dt->hour, dt->min, dt->sec);
+}
+
+void esp01_print_datetime_en(const ntp_datetime_fr_t *dt)
+{
+    static const char *jours_en[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    static const char *mois_en[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+    ESP01_LOG_INFO("NTP", "%s, %02d %s %04d %02d:%02d:%02d",
+                   jours_en[dt->wday], dt->day, mois_en[dt->month - 1], dt->year, dt->hour, dt->min, dt->sec);
+}
+
+const esp01_ntp_config_t *esp01_get_ntp_config(void)
+{
+    ESP01_LOG_DEBUG("NTP", "Lecture de la configuration NTP");
+    return &g_ntp_config;
+}
+
+ESP01_Status_t esp01_apply_ntp_config(uint8_t enable, int timezone, const char *server, int interval_s)
+{
+    char cmd[ESP01_MAX_CMD_BUF];
+    char resp[ESP01_MAX_RESP_BUF];
+    ESP01_Status_t st;
+
+    ESP01_LOG_INFO("NTP", "Application de la configuration NTP : enable=%d, timezone=%d, server=%s", enable, timezone, server);
+    snprintf(cmd, sizeof(cmd), "AT+CIPSNTPCFG=%d,%d,\"%s\"", enable, timezone, server);
+    st = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), "OK", ESP01_TIMEOUT_SHORT);
+    if (st != ESP01_OK)
+    {
+        ESP01_LOG_ERROR("NTP", "Echec de la commande AT+CIPSNTPCFG (code=%d)", st);
+        ESP01_RETURN_ERROR("NTP_APPLY_CONFIG", st);
+    }
+    ESP01_LOG_INFO("NTP", "Configuration NTP envoyée avec succès");
+    return st;
+}
+
 ESP01_Status_t esp01_get_ntp_time(char *datetime_buf, size_t bufsize)
 {
-	char resp[ESP01_MAX_RESP_BUF]; // Buffer pour la réponse
-	memset(resp, 0, sizeof(resp)); // Vide le buffer
+    ESP01_LOG_INFO("NTP", "Récupération de l'heure NTP...");
+    VALIDATE_PARAM(datetime_buf && bufsize > 0, ESP01_INVALID_PARAM);
 
-	_esp_login("[NTP] === Lecture de l'heure NTP (AT+CIPSNTPTIME?) ===");												   // Log étape importante
-	_esp_login("[NTP][DEBUG] Lecture de l'heure NTP (AT+CIPSNTPTIME?)");												   // Log debug détaillée
-	ESP01_Status_t status = esp01_send_raw_command_dma("AT+CIPSNTPTIME?", resp, sizeof(resp), "OK", ESP01_TIMEOUT_MEDIUM); // Envoie la commande AT
-	if (status != ESP01_OK)
-	{
-		_esp_login("[NTP][DEBUG] Erreur ou délai dépassé pour la lecture NTP"); // Log erreur détaillée
-		return status;
-	}
+    if (esp01_check_buffer_size(24, bufsize - 1) != ESP01_OK)
+    {
+        ESP01_LOG_ERROR("NTP", "Buffer trop petit pour la date NTP");
+        ESP01_RETURN_ERROR("NTP_GET_TIME", ESP01_BUFFER_OVERFLOW);
+    }
 
-	// Log la réponse brute (tronquée si trop longue)
-	_esp_login("[NTP][DEBUG] >>> Réponse brute NTP : %.80s", resp);
+    char cmd[] = "AT+CIPSNTPTIME?";
+    char response[ESP01_MAX_RESP_BUF] = {0};
 
-	char *ptr = strstr(resp, "+CIPSNTPTIME:"); // Cherche la ligne contenant la date/heure
-	if (ptr)
-	{
-		ptr += strlen("+CIPSNTPTIME:"); // Avance après le préfixe
-		while (*ptr == ' ')
-			ptr++; // Saute les espaces
+    ESP01_Status_t st = esp01_send_raw_command_dma(cmd, response, sizeof(response), "OK", ESP01_TIMEOUT_SHORT);
+    if (st != ESP01_OK)
+    {
+        ESP01_LOG_ERROR("NTP", "Echec de la commande AT+CIPSNTPTIME? (code=%d)", st);
+        ESP01_RETURN_ERROR("NTP_GET_TIME", st);
+    }
 
-		char *endl = strpbrk(ptr, "\r\n");						// Cherche la fin de la ligne
-		size_t len = endl ? (size_t)(endl - ptr) : strlen(ptr); // Calcule la longueur
+    ESP01_LOG_DEBUG("NTP", "Réponse brute ESP01 :\n%s", response);
 
-		if (len > 0 && len < bufsize) // Si la longueur est valide
-		{
-			strncpy(datetime_buf, ptr, len); // Copie la date/heure dans le buffer
-			datetime_buf[len] = '\0';		 // Termine la chaîne
-		}
-		else
-		{
-			datetime_buf[0] = '\0'; // Vide le buffer si erreur
-		}
-	}
-	else
-	{
-		datetime_buf[0] = '\0'; // Vide le buffer si pas trouvé
-	}
+    st = esp01_parse_string_after(response, "+CIPSNTPTIME:", datetime_buf, bufsize);
+    if (st != ESP01_OK)
+    {
+        ESP01_LOG_ERROR("NTP", "Impossible d'extraire la date NTP de la réponse ESP01");
+        ESP01_RETURN_ERROR("NTP_GET_TIME", st);
+    }
 
-	return ESP01_OK;
-}
+    char *ptr = datetime_buf;
+    while (*ptr == ' ' || *ptr == '\t' || *ptr == '\"')
+        ptr++;
+    if (ptr != datetime_buf)
+        memmove(datetime_buf, ptr, strlen(ptr) + 1);
 
-// ==================== SYNCHRONISATION PERIODIQUE ====================
+    if (strlen(datetime_buf) < 8)
+    {
+        ESP01_LOG_ERROR("NTP", "Date NTP trop courte ou invalide : %s", datetime_buf);
+        ESP01_RETURN_ERROR("NTP_GET_TIME", ESP01_FAIL);
+    }
 
-/**
- * @brief Démarre la synchronisation NTP périodique.
- */
-void esp01_ntp_start_periodic_sync(const char *ntp_server, int timezone_offset, uint32_t interval_seconds, bool print_fr)
-{
-	strncpy(g_ntp_server, ntp_server, sizeof(g_ntp_server) - 1); // Copie le nom du serveur NTP
-	g_ntp_server[sizeof(g_ntp_server) - 1] = '\0';				 // Termine la chaîne
-	g_ntp_timezone = timezone_offset;							 // Stocke le fuseau horaire
-	g_ntp_interval_ms = interval_seconds * 1000;				 // Convertit l'intervalle en ms
-	g_ntp_periodic_enabled = 1;									 // Active la synchro périodique
-	g_ntp_print_fr = print_fr;									 // Stocke le mode d'affichage
-	last_sync = 0;												 // Force la première synchro dès le prochain appel à la tâche
-}
-
-/**
- * @brief Arrête la synchronisation NTP périodique.
- */
-void esp01_ntp_stop_periodic_sync(void)
-{
-	g_ntp_periodic_enabled = 0; // Désactive la synchro périodique
-}
-
-/**
- * @brief Tâche à appeler régulièrement pour gérer la synchro périodique.
- */
-void esp01_ntp_periodic_task(void)
-{
-	static uint32_t last_call = 0; // Dernier appel de la fonction
-	uint32_t now = HAL_GetTick();  // Temps courant
-
-	// Vérifie toutes les 1s si une synchro doit être faite
-	if (now - last_call >= 1000)
-	{
-		last_call = now;
-		if (!g_ntp_periodic_enabled || g_ntp_interval_ms == 0)
-			return;
-
-		if ((last_sync == 0) || (now - last_sync >= g_ntp_interval_ms))
-		{
-			_esp_login("[NTP] === Synchronisation NTP périodique ==="); // Log étape importante
-			char datetime_buf[ESP01_MAX_RESP_BUF] = {0};				// Buffer pour la date/heure
-			if (esp01_get_ntp_time(datetime_buf, sizeof(datetime_buf)) == ESP01_OK &&
-				strlen(datetime_buf) > 0 && strstr(datetime_buf, "1970") == NULL)
-			{
-				strncpy(g_last_ntp_datetime, datetime_buf, sizeof(g_last_ntp_datetime) - 1); // Copie la date/heure
-				g_last_ntp_datetime[sizeof(g_last_ntp_datetime) - 1] = '\0';				 // Termine la chaîne
-				g_last_ntp_updated = 1;														 // Indique qu'une nouvelle date/heure est dispo
-			}
-			last_sync = now; // Met à jour le dernier timestamp de synchro
-		}
-	}
-}
-
-// ==================== UTILITAIRES PARSING ====================
-
-/**
- * @brief Parse une date/heure NTP et la formate en français.
- */
-char *esp01_parse_fr_local_datetime(const char *datetime_ntp, char *out, size_t out_size)
-{
-	const char *jours[] = {"dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"};
-	const char *mois[] = {"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"};
-	ntp_datetime_t dt;
-	_esp_login("[NTP][DEBUG] Chaîne à parser : '%s'", datetime_ntp); // Log la chaîne à parser
-	if (esp01_parse_ntp_datetime(datetime_ntp, &dt) == ESP01_OK)
-		snprintf(out, out_size, "%s %d %s %d %02dh%02d:%02d", jours[dt.wday_num], dt.day, mois[dt.mon], dt.year, dt.hour, dt.min, dt.sec);
-	else if (out_size > 0)
-		out[0] = '\0';
-	return out;
-}
-
-/**
- * @brief Parse une date/heure NTP et la formate en anglais/local.
- */
-char *esp01_parse_local_datetime(const char *datetime_ntp, int timezone_offset, char *out, size_t out_size)
-{
-	const char *days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-	const char *months[] = {"January", "February", "March", "April", "May", "June",
-							"July", "August", "September", "October", "November", "December"};
-	ntp_datetime_t dt;
-	_esp_login("[NTP][DEBUG] Chaîne à parser : '%s'", datetime_ntp); // Log la chaîne à parser
-	if (esp01_parse_ntp_datetime(datetime_ntp, &dt) == ESP01_OK)
-		snprintf(out, out_size, "%s %d %s %d %02dh%02d:%02d", days[dt.wday_num], dt.day, months[dt.mon], dt.year, dt.hour, dt.min, dt.sec);
-	else if (out_size > 0)
-		out[0] = '\0';
-	return out;
-}
-
-// ==================== AFFICHAGE UTILISATEUR ====================
-
-/**
- * @brief Affiche la date/heure NTP en français.
- */
-void esp01_print_fr_local_datetime(const char *datetime_ntp)
-{
-	char fr_buf[ESP01_MAX_RESP_BUF];									 // Buffer pour la date/heure formatée
-	esp01_parse_fr_local_datetime(datetime_ntp, fr_buf, sizeof(fr_buf)); // Parse et formate la date/heure
-	if (fr_buf[0])
-	{
-		_esp_login("[NTP][DEBUG] >>> %s", fr_buf); // Log la date/heure formatée
-	}
-	else
-	{
-		_esp_login("[NTP][DEBUG] >>> Erreur de parsing"); // Log erreur de parsing
-	}
-}
-
-/**
- * @brief Affiche la date/heure NTP en anglais/local.
- */
-void esp01_print_local_datetime(const char *datetime_ntp, int timezone_offset)
-{
-	char buf[ESP01_MAX_RESP_BUF];												 // Buffer pour la date/heure formatée
-	esp01_parse_local_datetime(datetime_ntp, timezone_offset, buf, sizeof(buf)); // Parse et formate la date/heure
-	_esp_login("[NTP][DEBUG] Date/Heure (UTC+%d): %s", timezone_offset, buf);	 // Log la date/heure formatée
-}
-
-/**
- * @brief Synchronise et affiche la date/heure NTP (one-shot ou périodique).
- */
-void esp01_ntp_sync_and_print(int timezone_offset, bool print_fr, int sync_period_s)
-{
-	char datetime[ESP01_MAX_RESP_BUF]; // Buffer pour la date/heure
-	int retry = 0, max_retry = 10;	   // Nombre de tentatives max
-	int period = sync_period_s;		   // Période de synchro
-
-	_esp_login("[NTP] === Démarrage synchronisation NTP (UTC+%d) ===", timezone_offset); // Log début synchro
-
-	if (esp01_configure_ntp("fr.pool.ntp.org", timezone_offset, period) != ESP01_OK) // Configure le NTP
-	{
-		_esp_login("[NTP][DEBUG] >>> Erreur configuration NTP"); // Log erreur détaillée
-		return;
-	}
-
-	if (period > 0) // Si synchro périodique demandée
-	{
-		esp01_ntp_start_periodic_sync("fr.pool.ntp.org", timezone_offset, period, print_fr); // Démarre la synchro périodique
-		_esp_login("[NTP] === Synchro périodique activée (%ds) ===", period);				 // Log activation périodique
-		return;
-	}
-
-	HAL_Delay(1000); // Laisse le temps à l'ESP de se synchroniser
-
-	while (retry < max_retry) // Boucle de tentatives de lecture NTP
-	{
-		if (esp01_get_ntp_time(datetime, sizeof(datetime)) == ESP01_OK) // Récupère la date/heure
-		{
-			if (strstr(datetime, "1970") == NULL && strlen(datetime) > 0) // Vérifie la validité
-				break;
-		}
-		HAL_Delay(2000); // Attend avant de réessayer
-		retry++;
-	}
-
-	if (retry == max_retry) // Si toutes les tentatives ont échoué
-	{
-		_esp_login("[NTP][DEBUG] Erreur ou délai dépassé pour la synchro NTP"); // Log erreur détaillée
-		return;
-	}
-
-	_esp_login("[NTP][DEBUG] Heure locale (fuseau UTC%+d) : %s", timezone_offset, datetime); // Log la date/heure brute
-
-	if (print_fr) // Si affichage en français demandé
-	{
-		_esp_login("[NTP][DEBUG] Affichage en français demandé"); // Log info
-		esp01_print_fr_local_datetime(datetime);				  // Affiche en FR
-	}
-	else
-	{
-		esp01_print_local_datetime(datetime, timezone_offset); // Affiche en EN/local
-	}
-}
-
-// ==================== ACCES DONNEES SYNCHRO ====================
-
-/**
- * @brief Retourne la dernière date/heure NTP reçue.
- */
-const char *esp01_ntp_get_last_datetime(void) { return g_last_ntp_datetime; }
-
-/**
- * @brief Indique si la date/heure a été mise à jour.
- */
-uint8_t esp01_ntp_is_updated(void) { return g_last_ntp_updated; }
-
-/**
- * @brief Réinitialise le flag de mise à jour.
- */
-void esp01_ntp_clear_updated_flag(void) { g_last_ntp_updated = 0; }
-
-// ==================== PARSING DE LA CHAINE NTP ====================
-
-/**
- * @brief Parse la chaîne brute NTP ("Mon Jun  9 21:18:06 2025") et remplit la structure.
- */
-ESP01_Status_t esp01_parse_ntp_datetime(const char *datetime_ntp, ntp_datetime_t *dt)
-{
-	char wday[4] = "", month[4] = ""; // Buffers pour le jour et le mois
-	int parsed = sscanf(datetime_ntp, "%3s %3s %d %d:%d:%d %d",
-						wday, month, &dt->day, &dt->hour, &dt->min, &dt->sec, &dt->year); // Parse la chaîne
-
-	wday[3] = '\0';	 // Sécurise la terminaison
-	month[3] = '\0'; // Sécurise la terminaison
-
-	_esp_login("[NTP][DEBUG] parsed=%d, day=%d, hour=%d, min=%d, sec=%d, year=%d",
-			   parsed, dt->day, dt->hour, dt->min, dt->sec, dt->year); // Log parsing
-	_esp_login("[NTP][DEBUG] month='%s' (hex: %02X %02X %02X %02X)",
-			   month, month[0], month[1], month[2], month[3]); // Log mois
-	_esp_login("[NTP][DEBUG] dt.mon=%d", dt->mon);			   // Log numéro de mois
-
-	if (parsed != 7 || dt->year <= 1970)
-		return ESP01_FAIL; // Retourne erreur si parsing invalide
-
-	// Conversion du mois (anglais -> numéro)
-	const char *months = "JanFebMarAprMayJunJulAugSepOctNovDec";
-	char *p = strstr(months, month);
-	if (!p)
-		return ESP01_FAIL;
-	dt->mon = (p - months) / 3;
-
-	// Conversion du jour de la semaine (anglais -> numéro)
-	if (!strcmp(wday, "Sun"))
-		dt->wday_num = 0;
-	else if (!strcmp(wday, "Mon"))
-		dt->wday_num = 1;
-	else if (!strcmp(wday, "Tue"))
-		dt->wday_num = 2;
-	else if (!strcmp(wday, "Wed"))
-		dt->wday_num = 3;
-	else if (!strcmp(wday, "Thu"))
-		dt->wday_num = 4;
-	else if (!strcmp(wday, "Fri"))
-		dt->wday_num = 5;
-	else if (!strcmp(wday, "Sat"))
-		dt->wday_num = 6;
-	else
-		dt->wday_num = 0;
-
-	return ESP01_OK; // Retourne OK si parsing réussi
+    ESP01_LOG_INFO("NTP", "Heure NTP récupérée : %s", datetime_buf);
+    return ESP01_OK;
 }

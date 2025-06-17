@@ -25,9 +25,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h> // Pour printf, snprintf, etc.
 #include <string.h>
-#include "STM32_WifiESP.h" // Fonctions du driver ESP01
-#include "STM32_WifiESP_WIFI.h"
-#include "STM32_WifiESP_NTP.h" // Fonctions NTP haut niveau
+#include "STM32_WifiESP.h"		// Fonctions du driver ESP01
+#include "STM32_WifiESP_WIFI.h" // Fonctions WiFi haut niveau
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,9 +38,10 @@
 /* USER CODE BEGIN PD */
 #define SSID "freeman"				  // Nom du réseau WiFi
 #define PASSWORD "manu2612@SOSSO1008" // Mot de passe du réseau WiFi
+#define SSID_AP "STM32"				  // Nom du réseau WiFi
+#define PASSWORD_AP "12345678"		  // Mot de passe du réseau WiFi
 #define LED_GPIO_PORT GPIOA			  // Port GPIO de la LED
 #define LED_GPIO_PIN GPIO_PIN_5		  // Pin GPIO de la LED
-#define NTP_PERIOD_S 20				  // Par exemple, 10 secondes entre chaque synchro
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -112,86 +112,23 @@ int main(void)
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
 	HAL_Delay(1000);
-	printf("[ESP01] === Démarrage du programme ===\r\n");
-	HAL_Delay(500);
-
 	ESP01_Status_t status;
-
-	// 1. Initialisation du driver ESP01
-	printf("[ESP01] === Initialisation du driver ESP01 ===\r\n");
+	printf("\n=== [TESTS WIFI ESP01] Début des tests WiFi ===\n");
+	// Initialisation du driver
+	printf("\n=== [INIT] Initialisation du driver ESP01 ===\n");
 	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-	printf("[ESP01] >>> Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(1000); // <-- Ajoute ce délai pour laisser le temps à l'ESP01 de démarrer
-
-	// 2. Flush du buffer RX
-	printf("[ESP01] === Flush RX Buffer ===\r\n");
-	status = esp01_flush_rx_buffer(500);
-	printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
+	printf(">>> [INIT] %s\n", status == ESP01_OK ? "OK" : "ERREUR");
 	HAL_Delay(1000);
-
-	// 3. Test de communication AT
-	printf("[ESP01] === Test de communication AT ===\r\n");
-	status = esp01_test_at();
-	printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+	test_wifi_module_STA(SSID, PASSWORD);
 	HAL_Delay(1000);
-
-	// 6. Connexion au réseau WiFi
-	printf("[ESP01] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
-	status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, SSID, PASSWORD, true, NULL, NULL, NULL);
-	printf("[ESP01] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
-	if (status != ESP01_OK)
-	{
-		printf("[ESP01] >>>  !!! Échec de la connexion WiFi, arrêt du programme.\r\n");
-		while (1)
-			;
-	}
-	HAL_Delay(1000);
-
-	// 7. Configuration NTP
-	printf("[NTP] === Configuration NTP ===\r\n");
-	status = esp01_configure_ntp("fr.pool.ntp.org", 2, NTP_PERIOD_S);
-	printf("[ESP01] >>> Config NTP : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(1000);
-
-	// 8. Synchronisation NTP One Shot
-	printf("[NTP] === NTP One Shot ===\r\n");
-	char datetime_ntp[64];
-	ESP01_Status_t ntp_status = esp01_get_ntp_time(datetime_ntp, sizeof(datetime_ntp));
-	if (ntp_status == ESP01_OK && strlen(datetime_ntp) > 0 && strstr(datetime_ntp, "1970") == NULL)
-	{
-		char fr_buf[128];
-		esp01_parse_fr_local_datetime(datetime_ntp, fr_buf, sizeof(fr_buf));
-		printf("[NTP] >>> %s\n", fr_buf);
-	}
-	else
-	{
-		printf("[ESP01] >>> Erreur lors de la récupération de l'heure NTP\n");
-	}
-	HAL_Delay(1000);
-
-	// 9. Synchronisation NTP périodique
-	printf("[NTP] === Synchronisation NTP périodique ===\r\n");
-	esp01_ntp_start_periodic_sync("fr.pool.ntp.org", 2, NTP_PERIOD_S, true);
+	test_wifi_module_AP(SSID_AP, PASSWORD_AP);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		esp01_ntp_periodic_task();
 
-		// Affichage de la date/heure si une synchro NTP a eu lieu
-		if (esp01_ntp_is_updated())
-		{
-			const char *datetime_ntp = esp01_ntp_get_last_datetime();
-			char fr_buf[128];
-			esp01_parse_fr_local_datetime(datetime_ntp, fr_buf, sizeof(fr_buf));
-			printf("[NTP] >>> %s\n", fr_buf);
-			esp01_ntp_clear_updated_flag();
-		}
-
-		HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
-		HAL_Delay(1000);
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
@@ -349,7 +286,7 @@ static void MX_GPIO_Init(void)
 	__HAL_RCC_GPIOB_CLK_ENABLE();
 
 	/*Configure GPIO pin Output Level */
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | LD2_Pin, GPIO_PIN_RESET);
 
 	/*Configure GPIO pin : B1_Pin */
 	GPIO_InitStruct.Pin = B1_Pin;
@@ -357,12 +294,12 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-	/*Configure GPIO pin : LD2_Pin */
-	GPIO_InitStruct.Pin = LD2_Pin;
+	/*Configure GPIO pins : PA0 LD2_Pin */
+	GPIO_InitStruct.Pin = GPIO_PIN_0 | LD2_Pin;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* USER CODE BEGIN MX_GPIO_Init_2 */
 

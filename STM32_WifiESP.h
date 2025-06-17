@@ -1,9 +1,9 @@
 /**
  ******************************************************************************
  * @file    STM32_WifiESP.h
- * @author  [Ton Nom]
+ * @author  manu
  * @version 1.2.0
- * @date    [Date]
+ * @date    13 juin 2025
  * @brief   Driver bas niveau pour module ESP01 (UART, AT, debug, reset, config, terminal AT)
  *
  * @details
@@ -25,28 +25,29 @@
 
 /* ========================== INCLUDES ========================== */
 
-#include "main.h"    // HAL, UART, etc.
 #include <string.h>  // Fonctions de manipulation de chaînes
 #include <stdbool.h> // Types booléens
 #include <stddef.h>  // Types de taille (size_t, etc.)
 #include <stdint.h>  // Types entiers standard (uint8_t, uint16_t, etc.)
-
+#include "main.h"    // HAL, UART, etc.
 /* =========================== DEFINES ========================== */
 
 // ----------- DEBUG -----------
-#define ESP01_DEBUG 0 // 1 = logs de debug activés, 0 = désactivés
+#define ESP01_DEBUG 1 // 1 = logs de debug activés, 0 = désactivés
 
 // ----------- CONSTANTES -----------
-#define ESP01_DMA_RX_BUF_SIZE 2048   // Taille buffer DMA RX UART
-#define ESP01_MAX_CMD_BUF 512        // Taille max buffer commande AT
-#define ESP01_CMD_RESP_BUF_SIZE 1024 // Taille buffer réponse AT
-#define ESP01_MAX_RESP_BUF 2048      // Taille max buffer réponse
-#define ESP01_SMALL_BUF_SIZE 64      // Taille petit buffer
-#define ESP01_MAX_IP_LEN 32          // Taille max IP (IPv4)
-#define ESP01_TIMEOUT_SHORT 2000     // Timeout court (ms)
-#define ESP01_TIMEOUT_MEDIUM 7000    // Timeout moyen (ms)
-#define ESP01_TIMEOUT_LONG 15000     // Timeout long (ms)
-
+#define ESP01_DMA_RX_BUF_SIZE 1024 // Taille buffer DMA RX UART
+#define ESP01_MAX_CMD_BUF 512      // Taille max buffer commande AT
+#define ESP01_MAX_RESP_BUF 2048    // Taille max buffer réponse
+#define ESP01_LARGE_RESP_BUF 4096  // Taille buffer réponse large (pour les réponses longues)
+#define ESP01_SMALL_BUF_SIZE 64    // Taille petit buffer
+#define ESP01_TIMEOUT_SHORT 2000   // Timeout court (ms)
+#define ESP01_TIMEOUT_MEDIUM 7000  // Timeout moyen (ms)
+#define ESP01_TIMEOUT_LONG 15000   // Timeout long (ms)
+#define UART_STR_BUF_SIZE 128
+#define SLEEP_STR_BUF_SIZE 64
+#define SYSLOG_STR_BUF_SIZE 32
+#define GMR_VERSION_LINES 3
 /* =========================== TYPES ============================ */
 
 // ----------- Statuts -----------
@@ -68,48 +69,8 @@ typedef enum
     ESP01_CONNECTION_ERROR,   ///< Erreur de connexion
     ESP01_MEMORY_ERROR,       ///< Erreur mémoire
     ESP01_EXIT,               ///< Sortie application/terminal
+    ESP01_NOT_DETECTED        ///< ESP01 non détecté physiquement
 } ESP01_Status_t;
-
-// ----------- Statistiques -----------
-
-/**
- * @brief  Statistiques d’utilisation du module ESP01.
- */
-typedef struct
-{
-    uint32_t at_ok;                  ///< Nombre de commandes AT OK
-    uint32_t at_fail;                ///< Nombre de commandes AT échouées
-    uint32_t at_timeout;             ///< Nombre de timeouts AT
-    uint32_t reset;                  ///< Nombre de resets effectués
-    uint32_t restore;                ///< Nombre de restaurations usine
-    uint32_t wifi_connect;           ///< Nombre de connexions WiFi
-    uint32_t wifi_disconnect;        ///< Nombre de déconnexions WiFi
-    uint32_t tcp_connect;            ///< Nombre de connexions TCP
-    uint32_t tcp_disconnect;         ///< Nombre de déconnexions TCP
-    uint32_t http_get;               ///< Nombre de requêtes HTTP GET
-    uint32_t http_post;              ///< Nombre de requêtes HTTP POST
-    uint32_t mqtt_connect;           ///< Nombre de connexions MQTT
-    uint32_t mqtt_disconnect;        ///< Nombre de déconnexions MQTT
-    uint32_t ntp_sync;               ///< Nombre de synchronisations NTP
-    uint32_t total_requests;         ///< Nombre total de requêtes
-    uint32_t response_count;         ///< Nombre total de réponses reçues
-    uint32_t successful_responses;   ///< Nombre de réponses réussies
-    uint32_t failed_responses;       ///< Nombre de réponses échouées
-    uint32_t total_response_time_ms; ///< Temps total de réponse (ms)
-    uint32_t avg_response_time_ms;   ///< Temps de réponse moyen (ms)
-} esp01_stats_t;
-
-// ----------- Modes WiFi -----------
-
-/**
- * @brief  Modes de fonctionnement WiFi du module ESP01.
- */
-typedef enum
-{
-    ESP01_WIFI_MODE_STA = 1,   ///< Station (client)
-    ESP01_WIFI_MODE_AP = 2,    ///< Point d'accès
-    ESP01_WIFI_MODE_STA_AP = 3 ///< Station + AP simultané
-} ESP01_WifiMode_t;
 
 /* ========================= VARIABLES GLOBALES ========================= */
 extern UART_HandleTypeDef *g_esp_uart;
@@ -118,17 +79,8 @@ extern uint8_t *g_dma_rx_buf;
 extern uint16_t g_dma_buf_size;
 extern volatile uint16_t g_rx_last_pos;
 extern uint16_t g_server_port;
-extern esp01_stats_t g_stats;
 
 /* ========================= MACROS UTILES ============================== */
-#define VALIDATE_PARAM(expr, errcode) \
-    do                                \
-    {                                 \
-        if (!(expr))                  \
-            return (errcode);         \
-    } while (0)
-
-/* ========================= FONCTIONS PRINCIPALES ====================== */
 
 // ----------- Log interne -----------
 
@@ -138,6 +90,20 @@ extern esp01_stats_t g_stats;
  * @param  ...  Arguments variables.
  */
 void _esp_login(const char *fmt, ...);
+
+#define VALIDATE_PARAM(expr, errcode) \
+    do                                \
+    {                                 \
+        if (!(expr))                  \
+            return (errcode);         \
+    } while (0)
+
+#define ESP01_LOG_INFO(module, fmt, ...) _esp_login("[" module "][INFO] " fmt, ##__VA_ARGS__)
+#define ESP01_LOG_ERROR(module, fmt, ...) _esp_login("[" module "][ERROR] " fmt, ##__VA_ARGS__)
+#define ESP01_LOG_WARN(module, fmt, ...) _esp_login("[" module "][WARN] " fmt, ##__VA_ARGS__)
+#define ESP01_LOG_DEBUG(module, fmt, ...) _esp_login("[" module "][DEBUG] " fmt, ##__VA_ARGS__)
+
+/* ========================= FONCTIONS PRINCIPALES ====================== */
 
 // ----------- Initialisation & Driver -----------
 
@@ -199,12 +165,6 @@ void _flush_rx_buffer(uint32_t timeout_ms);
  * @retval ESP01_Status_t
  */
 ESP01_Status_t esp01_get_at_version(char *version_buf, size_t buf_size);
-
-/**
- * @brief  Vérifie l’état de connexion du module ESP01.
- * @retval ESP01_Status_t
- */
-ESP01_Status_t esp01_get_connection_status(void);
 
 /* ----------- UART ----------- */
 
@@ -364,7 +324,7 @@ ESP01_Status_t esp01_send_raw_command_dma(const char *cmd, char *resp, size_t re
  */
 ESP01_Status_t esp01_check_buffer_size(size_t needed, size_t available);
 
-/* ========================= OUTILS DE PARSING =========================== */
+/* ==================== OUTILS DE PARSING ==================== */
 
 /**
  * @brief  Analyse une réponse pour extraire un entier 32 bits après un motif donné.
@@ -386,11 +346,31 @@ ESP01_Status_t esp01_parse_int_after(const char *resp, const char *pattern, int3
 ESP01_Status_t esp01_parse_string_after(const char *resp, const char *pattern, char *out, size_t out_size);
 
 /**
- * @brief  Log d'erreur harmonisé pour motif non trouvé lors du parsing.
- * @param  context  Contexte ou nom de la fonction (ex: "UART", "SLEEP").
- * @param  pattern  Motif recherché (ex: "+UART", "+SLEEP").
+ * @brief  Extrait la première chaîne entre guillemets après un motif dans une réponse AT.
+ * @param  src      Chaîne source (réponse AT complète).
+ * @param  motif    Motif à chercher (ex: "+CIFSR:STAIP,\"").
+ * @param  out      Buffer de sortie pour la valeur extraite.
+ * @param  out_len  Taille du buffer de sortie.
+ * @retval true si la valeur a été trouvée et extraite, false sinon.
  */
-void esp01_log_pattern_not_found(const char *context, const char *pattern);
+bool esp01_extract_quoted_value(const char *src, const char *motif, char *out, size_t out_len);
+
+/**
+ * @brief  Parse un booléen (0/1 ou true/false) après un tag dans une réponse AT.
+ */
+ESP01_Status_t esp01_parse_bool_after(const char *resp, const char *tag, bool *out);
+
+/**
+ * @brief  Log d'erreur harmonisé et retourne le code d'erreur.
+ * @param  prefix   Contexte ou nom de la fonction.
+ * @param  status   Code de statut à retourner.
+ */
+#define ESP01_RETURN_ERROR(prefix, status)                                          \
+    do                                                                              \
+    {                                                                               \
+        _esp_login(">>> [%s] Erreur : %s", prefix, esp01_get_error_string(status)); \
+        return (status);                                                            \
+    } while (0)
 
 /* ========================= TERMINAL AT (CONSOLE) ======================= */
 
@@ -410,5 +390,7 @@ void esp01_console_rx_callback(UART_HandleTypeDef *huart);
  * @brief  Tâche de gestion du terminal AT (console série).
  */
 void esp01_console_task(void);
+
+void esp01_parse_gmr_version(const char *gmr_buf, char *version_buf, size_t version_buf_size);
 
 #endif /* STM32_WIFIESP_H_ */

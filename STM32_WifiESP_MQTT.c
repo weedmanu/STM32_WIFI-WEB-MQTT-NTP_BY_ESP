@@ -23,35 +23,36 @@
  */
 
 // ==================== INCLUDES ====================
-#include "STM32_WifiESP_MQTT.h" // Header MQTT
-#include <string.h>             // Pour memcpy, strncpy, etc.
-#include <stdio.h>              // Pour snprintf
+#include "STM32_WifiESP_MQTT.h"
+#include "STM32_WifiESP.h"
+#include "STM32_WifiESP_WIFI.h"
+#include <string.h>
+#include <stdio.h>
 
 // ==================== VARIABLES GLOBALES ====================
-mqtt_client_t g_mqtt_client = {0};               // Structure client MQTT globale
-static mqtt_message_callback_t g_mqtt_cb = NULL; // Callback utilisateur pour les messages MQTT
+mqtt_client_t g_mqtt_client = {0};
+static mqtt_message_callback_t g_mqtt_cb = NULL;
 
 // ==================== CONNEXION MQTT ====================
-ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port,
-                                  const char *client_id, const char *username,
-                                  const char *password)
+ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port, const char *client_id, const char *username, const char *password)
 {
+    ESP01_LOG_DEBUG("MQTT", "Connexion au broker %s:%u avec client_id=%s", broker_ip, port, client_id);
+    VALIDATE_PARAM(broker_ip && client_id, ESP01_INVALID_PARAM);
+
     char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF]; // Buffers pour commandes et réponses
     ESP01_Status_t status;                                 // Statut de retour
-
-    VALIDATE_PARAM(broker_ip && client_id, ESP01_INVALID_PARAM); // Vérifie les paramètres
 
     // Ouvre une connexion TCP vers le broker MQTT
     snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u", broker_ip, port);
     status = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), "OK", ESP01_TIMEOUT_MEDIUM);
-    _esp_login("[MQTT] >>> %s", resp); // Log la réponse brute
+    ESP01_LOG_DEBUG("MQTT", "Réponse brute AT+CIPSTART : %s", resp);
     if (status != ESP01_OK)
         return status;
 
     HAL_Delay(500); // Petite pause pour la stabilité
 
     // Construction du paquet MQTT CONNECT
-    uint8_t mqtt_connect[256];
+    uint8_t mqtt_connect[ESP01_MAX_CMD_BUF];
     uint16_t mqtt_len = 0;
     mqtt_connect[mqtt_len++] = 0x10; // Type CONNECT
 
@@ -138,10 +139,10 @@ ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port,
     if (status != ESP01_OK)
         return status;
 
-    _esp_login("[MQTT] === Envoi du paquet CONNECT ===");
+    ESP01_LOG_DEBUG("MQTT", "Envoi du paquet CONNECT (%d octets)", mqtt_len);
     for (int i = 0; i < mqtt_len; ++i)
     {
-        _esp_login("[MQTT] >>> TX[%03d]: %02X", i, mqtt_connect[i]);
+        ESP01_LOG_DEBUG("MQTT", ">>> TX[%03d]: %02X", i, mqtt_connect[i]);
     }
 
     HAL_UART_Transmit(g_esp_uart, mqtt_connect, mqtt_len, HAL_MAX_DELAY); // Envoie le paquet CONNECT
@@ -151,12 +152,12 @@ ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port,
         return status;
 
     // Attente du CONNACK
-    uint8_t rx_buf[256];
+    uint8_t rx_buf[ESP01_MAX_RESP_BUF];
     memset(rx_buf, 0, sizeof(rx_buf));
     bool found_connack = false;
     uint32_t start = HAL_GetTick();
 
-    _esp_login("[MQTT] === Attente du CONNACK (timeout 10s) ===");
+    ESP01_LOG_DEBUG("MQTT", "=== Attente du CONNACK (timeout 10s) ===");
     HAL_Delay(500);
 
     while ((HAL_GetTick() - start) < 10000 && !found_connack)
@@ -185,34 +186,34 @@ ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port,
                             {
                                 if (mqtt_data_ptr[3] == 0x00)
                                 {
-                                    _esp_login("[MQTT] >>> CONNACK OK (0x00) reçu");
+                                    ESP01_LOG_DEBUG("MQTT", "CONNACK OK (0x00) reçu");
                                     found_connack = true;
                                 }
                                 else
                                 {
-                                    _esp_login("[MQTT] >>> CONNACK Error Code: 0x%02X", mqtt_data_ptr[3]);
+                                    ESP01_LOG_ERROR("MQTT", "CONNACK Error Code: 0x%02X", mqtt_data_ptr[3]);
                                     status = ESP01_CONNECTION_ERROR;
                                     found_connack = true;
                                 }
                             }
                             else
                             {
-                                _esp_login("[MQTT] >>> IPD: Données reçues, mais pas un CONNACK valide ou trop court");
+                                ESP01_LOG_DEBUG("MQTT", ">>> IPD: Données reçues, mais pas un CONNACK valide ou trop court");
                             }
                         }
                         else
                         {
-                            _esp_login("[MQTT] >>> IPD: Payload incomplet, attente de plus de données");
+                            ESP01_LOG_DEBUG("MQTT", ">>> IPD: Payload incomplet, attente de plus de données");
                         }
                     }
                     else
                     {
-                        _esp_login("[MQTT] >>> IPD: Impossible de parser la longueur du header IPD");
+                        ESP01_LOG_DEBUG("MQTT", ">>> IPD: Impossible de parser la longueur du header IPD");
                     }
                 }
                 else
                 {
-                    _esp_login("[MQTT] >>> IPD: Header mal formé ou fragmenté");
+                    ESP01_LOG_DEBUG("MQTT", ">>> IPD: Header mal formé ou fragmenté");
                 }
             }
         }
@@ -222,13 +223,13 @@ ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port,
 
     if (found_connack)
     {
-        _esp_login("[MQTT] === CONNACK détecté, connexion établie ===");
+        ESP01_LOG_DEBUG("MQTT", "=== CONNACK détecté, connexion établie ===");
         status = ESP01_OK;
     }
     else
     {
-        _esp_login("[MQTT] >>> Aucun CONNACK détecté après 10 secondes");
-        _esp_login("[MQTT] >>> Vérifiez la configuration du broker et les paramètres de connexion");
+        ESP01_LOG_WARN("MQTT", ">>> Aucun CONNACK détecté après 10 secondes");
+        ESP01_LOG_WARN("MQTT", ">>> Vérifiez la configuration du broker et les paramètres de connexion");
         status = ESP01_TIMEOUT;
     }
 
@@ -240,30 +241,30 @@ ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port,
         strncpy(g_mqtt_client.client_id, client_id, sizeof(g_mqtt_client.client_id) - 1);
         g_mqtt_client.keep_alive = 60;
         g_mqtt_client.packet_id = 1;
-        _esp_login("[MQTT] === Connexion établie avec succès ===");
+        ESP01_LOG_DEBUG("MQTT", "=== Connexion établie avec succès ===");
     }
     else
     {
-        _esp_login("[MQTT] >>> Échec de la connexion");
+        ESP01_LOG_ERROR("MQTT", ">>> Échec de la connexion");
     }
 
     return status;
 }
 
 // ==================== PUBLISH MQTT ====================
-ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message,
-                                  uint8_t qos, bool retain)
+ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message, uint8_t qos, bool retain)
 {
+    ESP01_LOG_DEBUG("MQTT", "Publication sur topic '%s', QoS=%d, retain=%d", topic, qos, retain);
+    VALIDATE_PARAM(topic && message && qos <= 2, ESP01_INVALID_PARAM);
+    VALIDATE_PARAM(g_mqtt_client.connected, ESP01_FAIL);
+
     char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF]; // Buffers pour commandes et réponses
     ESP01_Status_t status;                                 // Statut de retour
 
-    VALIDATE_PARAM(topic && message && qos <= 2, ESP01_INVALID_PARAM); // Vérifie les paramètres
-    VALIDATE_PARAM(g_mqtt_client.connected, ESP01_FAIL);               // Vérifie la connexion
+    ESP01_LOG_DEBUG("MQTT", "=== Préparation publication ===");
 
-    _esp_login("[MQTT] === Préparation publication ===");
-
-    uint8_t mqtt_publish[512]; // Buffer pour le paquet MQTT PUBLISH
-    uint16_t mqtt_len = 0;     // Taille du paquet MQTT
+    uint8_t mqtt_publish[ESP01_MQTT_MAX_PAYLOAD_LEN]; // Buffer pour le paquet MQTT PUBLISH
+    uint16_t mqtt_len = 0;                            // Taille du paquet MQTT
 
     mqtt_publish[mqtt_len++] = 0x30 | (qos << 1) | (retain ? 1 : 0); // Header PUBLISH
 
@@ -304,17 +305,17 @@ ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message,
     memcpy(&mqtt_publish[mqtt_len], message, message_len); // Copie le message
     mqtt_len += message_len;
 
-    _esp_login("[MQTT] === Envoi paquet PUBLISH ===");
+    ESP01_LOG_DEBUG("MQTT", "=== Envoi paquet PUBLISH ===");
     for (int i = 0; i < mqtt_len && i < 32; i++)
     {
-        _esp_login("[MQTT] >>> Byte %02X", mqtt_publish[i]);
+        ESP01_LOG_DEBUG("MQTT", ">>> Byte %02X", mqtt_publish[i]);
     }
 
     snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%u", mqtt_len); // Prépare la commande AT+CIPSEND
     status = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), ">", ESP01_TIMEOUT_SHORT);
     if (status != ESP01_OK)
     {
-        _esp_login("[MQTT] >>> Échec préparation envoi");
+        ESP01_LOG_WARN("MQTT", ">>> Échec préparation envoi");
         return status;
     }
 
@@ -324,16 +325,16 @@ ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message,
 
     if (status == ESP01_OK)
     {
-        _esp_login("[MQTT] >>> Message publié sur %s: %s", topic, message);
+        ESP01_LOG_DEBUG("MQTT", "Message publié sur %s: %s", topic, message);
 
         // Attente du PUBACK si QoS 1
         if (qos == 1)
         {
-            uint8_t rx_buf[32];
+            uint8_t rx_buf[ESP01_SMALL_BUF_SIZE];
             bool found_puback = false;
             uint32_t start = HAL_GetTick();
 
-            _esp_login("[MQTT] === Attente du PUBACK ===");
+            ESP01_LOG_DEBUG("MQTT", "=== Attente du PUBACK ===");
 
             while ((HAL_GetTick() - start) < 2000 && !found_puback)
             {
@@ -344,7 +345,7 @@ ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message,
                     {
                         if (rx_buf[i] == 0x40)
                         {
-                            _esp_login("[MQTT] >>> PUBACK reçu");
+                            ESP01_LOG_DEBUG("MQTT", ">>> PUBACK reçu");
                             found_puback = true;
                             break;
                         }
@@ -355,13 +356,13 @@ ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message,
 
             if (!found_puback)
             {
-                _esp_login("[MQTT] >>> Pas de PUBACK reçu");
+                ESP01_LOG_WARN("MQTT", ">>> Pas de PUBACK reçu");
             }
         }
     }
     else
     {
-        _esp_login("[MQTT] >>> Échec de la publication");
+        ESP01_LOG_ERROR("MQTT", "Échec de la publication");
     }
 
     return status;
@@ -370,14 +371,15 @@ ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message,
 // ==================== SUBSCRIBE MQTT ====================
 ESP01_Status_t esp01_mqtt_subscribe(const char *topic, uint8_t qos)
 {
+    ESP01_LOG_DEBUG("MQTT", "Souscription au topic '%s', QoS=%d", topic, qos);
+    VALIDATE_PARAM(topic && qos <= 2, ESP01_INVALID_PARAM);
+    VALIDATE_PARAM(g_mqtt_client.connected, ESP01_FAIL);
+
     char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF]; // Buffers pour commandes et réponses
     ESP01_Status_t status;                                 // Statut de retour
 
-    VALIDATE_PARAM(topic && qos <= 2, ESP01_INVALID_PARAM); // Vérifie les paramètres
-    VALIDATE_PARAM(g_mqtt_client.connected, ESP01_FAIL);    // Vérifie la connexion
-
-    uint8_t mqtt_subscribe[256]; // Buffer pour le paquet MQTT SUBSCRIBE
-    uint16_t mqtt_len = 0;       // Taille du paquet
+    uint8_t mqtt_subscribe[ESP01_MAX_CMD_BUF]; // Buffer pour le paquet MQTT SUBSCRIBE
+    uint16_t mqtt_len = 0;                     // Taille du paquet
 
     mqtt_subscribe[mqtt_len++] = 0x82; // Header SUBSCRIBE
 
@@ -410,11 +412,11 @@ ESP01_Status_t esp01_mqtt_subscribe(const char *topic, uint8_t qos)
 
     if (status == ESP01_OK)
     {
-        _esp_login("[MQTT] === Abonnement au topic %s ===", topic);
+        ESP01_LOG_DEBUG("MQTT", "Abonnement au topic %s réussi", topic);
     }
     else
     {
-        _esp_login("[MQTT] >>> Échec de l'abonnement");
+        ESP01_LOG_ERROR("MQTT", "Échec de l'abonnement");
     }
 
     return status;
@@ -423,13 +425,14 @@ ESP01_Status_t esp01_mqtt_subscribe(const char *topic, uint8_t qos)
 // ==================== PING MQTT ====================
 ESP01_Status_t esp01_mqtt_ping(void)
 {
-    char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF]; // Buffers pour commandes et réponses
-    ESP01_Status_t status;                                 // Statut de retour
-
+    ESP01_LOG_DEBUG("MQTT", "Envoi PINGREQ");
     if (!g_mqtt_client.connected)
         return ESP01_FAIL;
 
-    _esp_login("[MQTT] === Envoi PINGREQ (keepalive) ===");
+    char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF]; // Buffers pour commandes et réponses
+    ESP01_Status_t status;                                 // Statut de retour
+
+    ESP01_LOG_DEBUG("MQTT", "=== Envoi PINGREQ (keepalive) ===");
 
     uint8_t mqtt_pingreq[2];
     mqtt_pingreq[0] = 0xC0;
@@ -439,7 +442,7 @@ ESP01_Status_t esp01_mqtt_ping(void)
     status = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), ">", ESP01_TIMEOUT_SHORT);
     if (status != ESP01_OK)
     {
-        _esp_login("[MQTT] >>> Échec préparation envoi PINGREQ");
+        ESP01_LOG_WARN("MQTT", ">>> Échec préparation envoi PINGREQ");
         return status;
     }
 
@@ -449,9 +452,9 @@ ESP01_Status_t esp01_mqtt_ping(void)
 
     if (status == ESP01_OK)
     {
-        _esp_login("[MQTT] === PINGREQ envoyé avec succès ===");
+        ESP01_LOG_DEBUG("MQTT", "=== PINGREQ envoyé avec succès ===");
 
-        uint8_t rx_buf[32];
+        uint8_t rx_buf[ESP01_SMALL_BUF_SIZE];
         bool found_pingresp = false;
         uint32_t start = HAL_GetTick();
 
@@ -464,7 +467,7 @@ ESP01_Status_t esp01_mqtt_ping(void)
                 {
                     if (rx_buf[i] == 0xD0 && rx_buf[i + 1] == 0x00)
                     {
-                        _esp_login("[MQTT] >>> PINGRESP reçu");
+                        ESP01_LOG_DEBUG("MQTT", "PINGRESP reçu");
                         found_pingresp = true;
                         break;
                     }
@@ -475,12 +478,12 @@ ESP01_Status_t esp01_mqtt_ping(void)
 
         if (!found_pingresp)
         {
-            _esp_login("[MQTT] >>> Pas de PINGRESP reçu");
+            ESP01_LOG_ERROR("MQTT", "Pas de PINGRESP reçu");
         }
     }
     else
     {
-        _esp_login("[MQTT] >>> Échec de l'envoi du PINGREQ");
+        ESP01_LOG_WARN("MQTT", ">>> Échec de l'envoi du PINGREQ");
     }
 
     return status;
@@ -489,7 +492,8 @@ ESP01_Status_t esp01_mqtt_ping(void)
 // ==================== DECONNEXION MQTT ====================
 ESP01_Status_t esp01_mqtt_disconnect(void)
 {
-    char resp[ESP01_DMA_RX_BUF_SIZE]; // Buffer pour la réponse
+    ESP01_LOG_DEBUG("MQTT", "Déconnexion du broker MQTT");
+    char resp[ESP01_MAX_RESP_BUF]; // Buffer pour la réponse
     if (esp01_send_raw_command_dma("AT+CIPCLOSE", resp, sizeof(resp), "OK", 3000) == ESP01_OK || strstr(resp, "CLOSED"))
     {
         return ESP01_OK; // Déconnexion réussie
@@ -500,13 +504,14 @@ ESP01_Status_t esp01_mqtt_disconnect(void)
 // ==================== CALLBACK MESSAGE MQTT ====================
 void esp01_mqtt_set_message_callback(mqtt_message_callback_t cb)
 {
-    g_mqtt_cb = cb; // Enregistre le callback utilisateur
+    ESP01_LOG_DEBUG("MQTT", "Callback message MQTT enregistré");
+    g_mqtt_cb = cb;
 }
 
 // ==================== POLLING MQTT ====================
 void esp01_mqtt_poll(void)
 {
-    uint8_t buffer[ESP01_DMA_RX_BUF_SIZE];                     // Buffer temporaire pour les nouvelles données
+    uint8_t buffer[ESP01_MAX_RESP_BUF];                        // Buffer temporaire pour les nouvelles données
     uint16_t len = esp01_get_new_data(buffer, sizeof(buffer)); // Récupère les nouvelles données UART
     if (len > 0)
     {
@@ -520,7 +525,7 @@ void esp01_mqtt_poll(void)
         {
             g_acc_len = 0;
             g_accumulator[0] = '\0';
-            _esp_login("[MQTT] [ERROR] Débordement de l'accumulateur MQTT");
+            ESP01_LOG_ERROR("MQTT", "Débordement de l'accumulateur MQTT");
             return;
         }
     }
@@ -540,7 +545,7 @@ void esp01_mqtt_poll(void)
         char *len_ptr = ipd_start + 5;
         if (sscanf(len_ptr, "%d", &payload_len) != 1)
         {
-            _esp_login("[MQTT] [WARN] Impossible de parser la longueur du +IPD");
+            ESP01_LOG_WARN("MQTT", "Impossible de parser la longueur du +IPD");
             break;
         }
 
@@ -549,8 +554,8 @@ void esp01_mqtt_poll(void)
 
         if (g_acc_len - ipd_start_offset < ipd_total_len)
         {
-            _esp_login("[MQTT] Attente suite: ipd_start_offset=%d, g_acc_len=%d, ipd_total_len=%d",
-                       ipd_start_offset, g_acc_len, ipd_total_len);
+            ESP01_LOG_DEBUG("MQTT", "Attente suite: ipd_start_offset=%d, g_acc_len=%d, ipd_total_len=%d",
+                            ipd_start_offset, g_acc_len, ipd_total_len);
             break;
         }
 
@@ -562,19 +567,20 @@ void esp01_mqtt_poll(void)
             uint16_t topic_len = (payload[2] << 8) | payload[3];
             if (topic_len + 4 < payload_len && topic_len < 64)
             {
-                char topic_buf[64] = {0};
+                char topic_buf[ESP01_MQTT_MAX_TOPIC_LEN] = {0};
                 memcpy(topic_buf, &payload[4], topic_len); // Copie le topic
                 int msg_len = payload_len - 4 - topic_len;
-                if (msg_len > 127)
-                    msg_len = 127;
-                char msg_buf[128] = {0};
+                if (msg_len > (ESP01_MQTT_MAX_PAYLOAD_LEN - 1))
+                    msg_len = ESP01_MQTT_MAX_PAYLOAD_LEN - 1;
+                char msg_buf[ESP01_MQTT_MAX_PAYLOAD_LEN] = {0};
                 memcpy(msg_buf, &payload[4 + topic_len], msg_len); // Copie le message
                 msg_buf[msg_len] = 0;
                 g_mqtt_cb(topic_buf, msg_buf); // Appelle le callback utilisateur
+                ESP01_LOG_DEBUG("MQTT", "Paquet PUBLISH reçu sur topic '%s', message='%s'", topic_buf, msg_buf);
             }
             else
             {
-                _esp_login("[MQTT] [WARN] Paquet PUBLISH mal formé ou topic/message trop long");
+                ESP01_LOG_WARN("MQTT", "Paquet PUBLISH mal formé ou topic/message trop long");
             }
         }
 

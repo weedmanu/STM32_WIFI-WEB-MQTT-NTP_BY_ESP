@@ -27,7 +27,8 @@
 #include <stdio.h>		   // Pour printf, snprintf, etc.
 #include "STM32_WifiESP.h" // Fonctions du driver ESP01
 #include "STM32_WifiESP_WIFI.h"
-#include "STM32_WifiESP_HTTP.h" // Fonctions HTTP haut niveau
+#include "STM32_WifiESP_HTTP.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -96,6 +97,7 @@ static void page_root(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
+	_esp_login("[HTTP][DEBUG] Entrée dans page_root (conn_id=%d)", conn_id);
 
 	static const char PAGE_ROOT_TITLE[] = "Accueil STM32 Webserver";
 	static const char CSS_PAGE_ROOT_SPECIFIC[] =
@@ -112,8 +114,12 @@ static void page_root(int conn_id, const http_parsed_request_t *req)
 		"<a class='button red' href='/device'>Device</a>";
 
 	char html[2048];
+	html[0] = '\0';
 	char *ptr = html;
 	char *end_ptr = html + sizeof(html);
+
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
+		return;
 
 	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_ROOT_TITLE, HTML_TITLE_END_STYLE_START);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
@@ -122,6 +128,7 @@ static void page_root(int conn_id, const http_parsed_request_t *req)
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", BODY_PAGE_ROOT);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
+	_esp_login("[HTTP][DEBUG] Sortie de page_root, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html)); // Envoie la page
 }
 
@@ -130,6 +137,7 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
+	_esp_login("[HTTP][DEBUG] Entrée dans page_led (conn_id=%d)", conn_id);
 
 	const char PAGE_LED_TITLE[] = "LED STM32";
 	const char CSS_PAGE_LED_SPECIFIC[] =
@@ -141,7 +149,7 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 		"a.button{display:inline-block;padding:1em 2em;margin:1em 0.5em;background:#fbc02d;color:#fff;text-decoration:none;border-radius:8px;font-size:1.1em;transition:background 0.2s,border 0.2s;box-shadow:0 2px 8px #e0f5d8;border:2px solid #fbc02d;}"
 		"a.button.yellow{background:#fbc02d;border-color:#fbc02d;color:#fff;}";
 	static const char BODY_PAGE_LED[] =
-		"<h1>Contrôle de la LED (PA0)</h1>"
+		"<h1>Contrôle de la LED</h1>"
 		"<p>État actuel : <b style='color:%s'>%s</b></p>"
 		"<form method='get' action='/led'>"
 		"<button class='green' name='state' value='on'>Allumer</button>"
@@ -152,15 +160,18 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 	if (req && req->query_string[0])
 	{
 		if (strstr(req->query_string, "state=on"))
-			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_SET); // Allume la LED
+			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_SET);
 		else if (strstr(req->query_string, "state=off"))
-			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_RESET); // Éteint la LED
+			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_RESET);
 	}
 	GPIO_PinState led = HAL_GPIO_ReadPin(LED_GPIO_PORT, LED_GPIO_PIN);
 
 	char html[2048];
 	char *ptr = html;
 	char *end_ptr = html + sizeof(html);
+
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
+		return;
 
 	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_LED_TITLE, HTML_TITLE_END_STYLE_START);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
@@ -174,6 +185,7 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
+	_esp_login("[HTTP][DEBUG] Sortie de page_led, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
 
@@ -182,13 +194,13 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
+	_esp_login("[HTTP][DEBUG] Entrée dans page_testget (conn_id=%d)", conn_id);
 
 	const char PAGE_TESTGET_TITLE[] = "Test GET";
 	const char CSS_PAGE_TESTGET_SPECIFIC[] =
 		"div.param{margin:0.7em auto;padding:0.7em 1em;background:#f8fff4;border-radius:8px;max-width:320px;box-shadow:0 1px 4px #e0f5d8;}"
 		"span.paramname{color:#3a5d23;font-weight:bold;display:inline-block;width:110px;text-align:right;margin-right:0.5em;}"
 		"span.paramval{color:#388e3c;font-weight:bold;}"
-
 		".test-link{display:inline-block;background:#222;color:#ffe066;font-size:1.2em;padding:1em 2em;border-radius:10px;margin:1.5em 0 1em 0;box-shadow:0 2px 8px #e0f5d8;font-family:monospace;word-break:break-all;letter-spacing:1px;}"
 		".test-label{font-size:1.1em;color:#388e3c;font-weight:bold;margin-bottom:0.3em;display:block;}"
 		"a.button.green{display:inline-block;padding:1em 2em;margin:2em 0 0 0;background:#28a745;color:#fff;text-decoration:none;border-radius:8px;font-size:1.1em;transition:background 0.2s,border 0.2s;box-shadow:0 2px 8px #e0f5d8;border:2px solid #28a745;}"
@@ -204,6 +216,9 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 	char *end_ptr = html + sizeof(html);
 	char ip[32] = "IP";
 	esp01_get_current_ip(ip, sizeof(ip));
+
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
+		return;
 
 	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_TESTGET_TITLE, HTML_TITLE_END_STYLE_START);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
@@ -252,6 +267,7 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 	strncat(html, "<br><a class='button green' href='/'>Retour accueil</a>", sizeof(html) - strlen(html) - 1);
 	strncat(html, HTML_CARD_END_BODY_END, sizeof(html) - strlen(html) - 1);
 
+	_esp_login("[HTTP][DEBUG] Sortie de page_testget, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
 
@@ -260,6 +276,7 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
+	_esp_login("[HTTP][DEBUG] Entrée dans page_status (conn_id=%d)", conn_id);
 
 	const char PAGE_STATUS_TITLE[] = "Statut Serveur STM32";
 	const char CSS_PAGE_STATUS_SPECIFIC[] =
@@ -281,6 +298,9 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 
 	const esp01_stats_t *stats = &g_stats;
 
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
+		return;
+
 	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_STATUS_TITLE, HTML_TITLE_END_STYLE_START);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_STATUS_SPECIFIC);
@@ -300,7 +320,6 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 					(led == GPIO_PIN_SET) ? "allumée" : "éteinte",
 					esp01_get_active_connection_count());
 
-	// Bloc 2 : Détail des connexions TCP
 	ptr += snprintf(ptr, end_ptr - ptr,
 					"<h2>Connexions TCP</h2>"
 					"<table><tr><th>ID</th><th>Dernière activité (ms)</th><th>IP client</th><th>Port client</th></tr>");
@@ -325,7 +344,6 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 	}
 	ptr += snprintf(ptr, end_ptr - ptr, "</table>");
 
-	// Bloc 3 : Statistiques serveur
 	ptr += snprintf(ptr, end_ptr - ptr,
 					"<h2>Statistiques HTTP</h2>"
 					"<table>"
@@ -344,6 +362,7 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>");
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
+	_esp_login("[HTTP][DEBUG] Sortie de page_status, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
 
@@ -366,7 +385,22 @@ static void collect_system_info(system_info_t *info)
 
 	// Firmware ESP01
 	strcpy(info->at_version, "N/A");
-	esp01_get_at_version(info->at_version, sizeof(info->at_version));
+	char resp[256] = {0};
+	if (esp01_get_at_version(resp, sizeof(resp)) == ESP01_OK)
+	{
+		// Utilise la fonction de parsing pour extraire la ligne "AT version:"
+		char *line = strstr(resp, "AT version:");
+		if (line)
+		{
+			char *end = strchr(line, '\n');
+			size_t len = end ? (size_t)(end - line) : strlen(line);
+			if (len > 0 && len < sizeof(info->at_version))
+			{
+				strncpy(info->at_version, line, len);
+				info->at_version[len] = '\0';
+			}
+		}
+	}
 
 	// Type de carte STM32
 	strcpy(info->stm32_type, "STM32 inconnue");
@@ -432,10 +466,11 @@ static int render_html_section(char *buffer, size_t buffer_size, const char *tit
 }
 
 // --- Page Infos Système & Réseau ("/device") ---
-static void page_device(int conn_id, const http_parsed_request_t *request)
+static void page_device(int conn_id, const http_parsed_request_t *req)
 {
-	if (!request)
+	if (!req)
 		return;
+	_esp_login("[HTTP][DEBUG] Entrée dans page_device (conn_id=%d)", conn_id);
 
 	const char PAGE_DEVICE_TITLE[] = "Infos Système & Réseau";
 	const char CSS_PAGE_DEVICE_SPECIFIC[] =
@@ -445,16 +480,17 @@ static void page_device(int conn_id, const http_parsed_request_t *request)
 		"a.button{display:inline-block;padding:1em 2em;margin:1em 0.5em;background:#388e3c;color:#fff;text-decoration:none;border-radius:8px;font-size:1.1em;transition:background 0.2s,border 0.2s;box-shadow:0 2px 8px #e0f5d8;border:2px solid #388e3c;}"
 		"a.button.green{background:#28a745;border-color:#28a745;color:#fff;";
 
-	// Collecter les informations système
 	system_info_t sys_info;
 	collect_system_info(&sys_info);
 
-	// Préparer le buffer HTML
 	char html[2048];
+	html[0] = '\0';
 	char *ptr = html;
 	char *end_ptr = html + sizeof(html);
 
-	// En-tête HTML et CSS
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
+		return;
+
 	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s",
 					HTML_DOC_START, HTML_TITLE_START,
 					PAGE_DEVICE_TITLE, HTML_TITLE_END_STYLE_START);
@@ -462,19 +498,16 @@ static void page_device(int conn_id, const http_parsed_request_t *request)
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_DEVICE_SPECIFIC);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_STYLE_END_HEAD_BODY_CARD_START);
 
-	// Section Système
 	const char *sys_labels[] = {"Firmware ESP01", "Carte STM32"};
 	const char *sys_values[] = {sys_info.at_version, sys_info.stm32_type};
 	ptr += render_html_section(ptr, end_ptr - ptr, "Informations Système",
 							   sys_labels, sys_values, 2);
 
-	// Section WiFi
 	const char *wifi_labels[] = {"Mode", "SSID"};
 	const char *wifi_values[] = {sys_info.wifi_mode, sys_info.wifi_ssid};
 	ptr += render_html_section(ptr, end_ptr - ptr, "Configuration WiFi",
 							   wifi_labels, wifi_values, 2);
 
-	// Section Serveur
 	char port_str[8];
 	snprintf(port_str, sizeof(port_str), "%u", sys_info.server_port);
 
@@ -483,13 +516,13 @@ static void page_device(int conn_id, const http_parsed_request_t *request)
 	ptr += render_html_section(ptr, end_ptr - ptr, "Configuration Serveur",
 							   server_labels, server_values, 2);
 
-	// Bouton retour
 	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>");
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
-	// Envoyer la réponse HTTP
+	_esp_login("[HTTP][DEBUG] Sortie de page_device, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -549,7 +582,7 @@ int main(void)
 
 	// 4. Test de version AT+GMR
 	printf("[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
-	char at_version[128] = {0};
+	char at_version[256] = {0};
 	status = esp01_get_at_version(at_version, sizeof(at_version));
 	printf("[ESP01] >>> Version ESP01 : %s\r\n", at_version);
 
@@ -602,15 +635,24 @@ int main(void)
 
 	// 9. Affichage de l'adresse IP
 	printf("[WEB] === Serveur Web prêt ===\r\n");
-	char ip[32];
+	char ip[32] = "N/A";
 	if (esp01_get_current_ip(ip, sizeof(ip)) == ESP01_OK)
-	{
 		printf("[WEB] >>> Connectez-vous à : http://%s/\r\n", ip);
+	else
+		printf("[WEB] >>> Impossible de récupérer l'adresse IP du module\r\n");
+
+	// Affichage de la configuration IP complète
+
+	char ipc[32] = "N/A", gw[32] = "N/A", mask[32] = "N/A";
+	if (esp01_get_ip_config(ipc, sizeof(ipc), gw, sizeof(gw), mask, sizeof(mask)) == ESP01_OK)
+	{
+		printf("[WEB] >>> IP: %s\r\n", ipc);
+		printf("[WEB] >>> Gateway: %s\r\n", gw);
+		printf("[WEB] >>> Masque: %s\r\n", mask);
 	}
 	else
 	{
-		printf("[WIFI] >>> Impossible de récupérer l'IP STA\r\n");
-		Error_Handler();
+		printf("[WEB] >>> Impossible de récupérer la configuration IP complète\r\n");
 	}
 	/* USER CODE END 2 */
 
