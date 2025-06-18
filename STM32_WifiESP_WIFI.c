@@ -5,81 +5,95 @@
  * @version 1.2.0
  * @date    13 juin 2025
  * @brief   Implémentation des fonctions haut niveau WiFi pour ESP01
+ *
+ * @details
+ * Ce fichier source contient l’implémentation des fonctions haut niveau WiFi :
+ * - Modes WiFi (STA, AP, STA+AP)
+ * - Scan des réseaux, connexion, déconnexion
+ * - DHCP, IP, MAC, hostname, clients AP
+ * - TCP/IP, ping, statut, multi-connexion
+ * - Fonctions utilitaires d'affichage et de parsing
+ *
+ * @note
+ * - Nécessite le driver bas niveau STM32_WifiESP.h
  ******************************************************************************
  */
 
-#include "STM32_WifiESP_WIFI.h"
-#include <string.h>
-#include <stdio.h>
+#include "STM32_WifiESP_WIFI.h" // Header du module WiFi haut niveau
+#include <string.h>             // Pour manipulation de chaînes
+#include <stdio.h>              // Pour snprintf, sscanf, etc.
 
 /* ========================== OUTILS FACTORISÉS ========================== */
 
 /**
  * @brief  Copie une réponse dans un buffer utilisateur en protégeant contre le débordement.
+ * @param  dst      Buffer de destination.
+ * @param  dst_size Taille du buffer de destination.
+ * @param  src      Chaîne source à copier.
+ * @retval ESP01_Status_t
  */
 static ESP01_Status_t esp01_copy_resp(char *dst, size_t dst_size, const char *src)
 {
-    if (!dst || !src || dst_size == 0)
+    if (!dst || !src || dst_size == 0) // Vérifie les paramètres d'entrée
         return ESP01_INVALID_PARAM;
-    size_t len = strlen(src);
-    if (len >= dst_size)
+    size_t len = strlen(src); // Longueur de la chaîne source
+    if (len >= dst_size)      // Vérifie le débordement
         return ESP01_BUFFER_OVERFLOW;
-    strncpy(dst, src, dst_size - 1);
-    dst[dst_size - 1] = 0;
+    strncpy(dst, src, dst_size - 1); // Copie la chaîne source dans le buffer de destination
+    dst[dst_size - 1] = 0;           // Termine la chaîne
     return ESP01_OK;
 }
 
 /**
  * @brief  Envoie une commande AT et gère le buffer de réponse.
+ * @param  cmd        Commande AT à envoyer.
+ * @param  expected   Motif attendu dans la réponse.
+ * @param  timeout_ms Timeout en ms.
+ * @param  resp       Buffer de réponse.
+ * @param  resp_size  Taille du buffer de réponse.
+ * @retval ESP01_Status_t
  */
-static ESP01_Status_t esp01_send_at_with_resp(const char *cmd, const char *expected, int timeout_ms, char *resp, size_t resp_size)
+ESP01_Status_t esp01_send_at_with_resp(const char *cmd, const char *expected, int timeout_ms, char *resp, size_t resp_size)
 {
-    if (!cmd || !expected)
+    if (!cmd || !expected) // Vérifie les paramètres d'entrée
         return ESP01_INVALID_PARAM;
-    return esp01_send_raw_command_dma(cmd, resp, resp_size, expected, timeout_ms);
+    return esp01_send_raw_command_dma(cmd, resp, resp_size, expected, timeout_ms); // Utilise la fonction bas niveau
 }
-
-/*
-static void esp01_log_error(const char *prefix, ESP01_Status_t status)
-{
-    _esp_login(">>> [%s] Erreur : %s", prefix, esp01_get_error_string(status));
-}
-*/
 
 /* ========================== FONCTIONS PRINCIPALES ========================== */
 
 /* --- Modes WiFi --- */
 ESP01_Status_t esp01_get_connection_status(void)
 {
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWJAP?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
-    ESP01_LOG_DEBUG("STATUS", "Réponse : %s", resp);
+    char resp[ESP01_MAX_RESP_BUF];                                                                           // Buffer pour la réponse AT
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWJAP?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande AT+CWJAP?
+    ESP01_LOG_DEBUG("STATUS", "Réponse : %s", resp);                                                         // Log la réponse
 
-    if (st != ESP01_OK)
-        ESP01_RETURN_ERROR("STATUS", ESP01_FAIL);
+    if (st != ESP01_OK)                           // Si la commande a échoué
+        ESP01_RETURN_ERROR("STATUS", ESP01_FAIL); // Retourne une erreur
 
-    if (strstr(resp, "+CWJAP:"))
+    if (strstr(resp, "+CWJAP:")) // Si le motif "+CWJAP:" est trouvé, on est connecté
     {
-        ESP01_LOG_INFO("STATUS", "Motif trouvé : +CWJAP (connecté)");
-        return ESP01_OK;
+        ESP01_LOG_INFO("STATUS", "Motif trouvé : +CWJAP (connecté)"); // Log info connexion
+        return ESP01_OK;                                              // Retourne OK
     }
-    ESP01_LOG_WARN("STATUS", "Motif non trouvé : non connecté");
-    return ESP01_WIFI_NOT_CONNECTED;
+    ESP01_LOG_WARN("STATUS", "Motif non trouvé : non connecté"); // Log warning non connecté
+    return ESP01_WIFI_NOT_CONNECTED;                             // Retourne non connecté
 }
 
 ESP01_Status_t esp01_get_wifi_mode(int *mode)
 {
-    VALIDATE_PARAM(mode, ESP01_INVALID_PARAM);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWMODE?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    VALIDATE_PARAM(mode, ESP01_INVALID_PARAM);                                                                // Vérifie le pointeur de sortie
+    char resp[ESP01_MAX_RESP_BUF];                                                                            // Buffer pour la réponse AT
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWMODE?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande AT+CWMODE?
     if (st != ESP01_OK)
         ESP01_RETURN_ERROR("CWMODE", st);
 
-    char *line = strstr(resp, "+CWMODE:");
+    char *line = strstr(resp, "+CWMODE:"); // Cherche le motif dans la réponse
     if (line)
     {
         int val = 0;
-        if (sscanf(line, "+CWMODE:%d", &val) == 1)
+        if (sscanf(line, "+CWMODE:%d", &val) == 1) // Extrait la valeur du mode
         {
             *mode = val;
             ESP01_LOG_INFO("CWMODE", "Mode WiFi lu : %d", val);
@@ -92,12 +106,12 @@ ESP01_Status_t esp01_get_wifi_mode(int *mode)
 
 ESP01_Status_t esp01_set_wifi_mode(int mode)
 {
-    if (mode < ESP01_WIFI_MODE_STA || mode > ESP01_WIFI_MODE_STA_AP)
+    if (mode < ESP01_WIFI_MODE_STA || mode > ESP01_WIFI_MODE_STA_AP) // Vérifie la validité du mode
         return ESP01_INVALID_PARAM;
-    char cmd[ESP01_MAX_CMD_BUF];
-    snprintf(cmd, sizeof(cmd), "AT+CWMODE=%d", mode);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    char cmd[ESP01_MAX_CMD_BUF];                                                                     // Buffer pour la commande AT
+    snprintf(cmd, sizeof(cmd), "AT+CWMODE=%d", mode);                                                // Prépare la commande
+    char resp[ESP01_MAX_RESP_BUF];                                                                   // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
         ESP01_RETURN_ERROR("CWMODE", st);
     ESP01_LOG_INFO("CWMODE", "Mode WiFi défini : %d", mode);
@@ -109,88 +123,89 @@ const char *esp01_wifi_mode_to_string(int mode)
     switch (mode)
     {
     case ESP01_WIFI_MODE_STA:
-        return "STA";
+        return "STA"; // Mode station
     case ESP01_WIFI_MODE_AP:
-        return "AP";
+        return "AP"; // Mode point d'accès
     case ESP01_WIFI_MODE_STA_AP:
-        return "STA+AP";
+        return "STA+AP"; // Mode mixte
     default:
-        return "INCONNU";
+        return "INCONNU"; // Mode inconnu
     }
 }
 
 ESP01_Status_t esp01_get_tcp_status(char *out, size_t out_size)
 {
     ESP01_LOG_INFO("CIPSTATUS", "=== Lecture statut TCP ===");
-    if (!out || out_size == 0)
-        return ESP01_INVALID_PARAM;
-    char resp[ESP01_MAX_RESP_BUF] = {0};
-    ESP01_Status_t st = esp01_send_raw_command_dma("AT+CIPSTATUS", resp, sizeof(resp), "OK", 2000);
-    strncpy(out, resp, out_size - 1);
-    out[out_size - 1] = '\0';
+    VALIDATE_PARAM(out && out_size > 0, ESP01_INVALID_PARAM);                                       // Vérifie les paramètres
+    char resp[ESP01_MAX_RESP_BUF] = {0};                                                            // Buffer pour la réponse AT
+    ESP01_Status_t st = esp01_send_raw_command_dma("AT+CIPSTATUS", resp, sizeof(resp), "OK", 2000); // Envoie la commande
+    ESP01_Status_t copy_st = esp01_safe_strcpy(out, out_size, resp);                                // Copie la réponse dans le buffer utilisateur
     ESP01_LOG_INFO("CIPSTATUS", ">>> Réponse :\n%s", resp);
-    return (st == ESP01_OK) ? ESP01_OK : ESP01_FAIL;
+    return (st == ESP01_OK && copy_st == ESP01_OK) ? ESP01_OK : ESP01_FAIL;
 }
 
 /* --- Scan WiFi --- */
 ESP01_Status_t esp01_scan_networks(esp01_network_t *networks, uint8_t max_networks, uint8_t *found_networks)
 {
-    VALIDATE_PARAM(networks && found_networks && max_networks > 0, ESP01_INVALID_PARAM);
-    char resp[ESP01_LARGE_RESP_BUF];
-    *found_networks = 0;
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWLAP", "OK", ESP01_TIMEOUT_LONG, resp, sizeof(resp));
+    VALIDATE_PARAM(networks && found_networks && max_networks > 0, ESP01_INVALID_PARAM);                   // Vérifie les paramètres
+    char resp[ESP01_LARGE_RESP_BUF];                                                                       // Buffer pour la réponse AT
+    *found_networks = 0;                                                                                   // Initialise le compteur de réseaux trouvés
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWLAP", "OK", ESP01_TIMEOUT_LONG, resp, sizeof(resp)); // Scan réseaux
     if (st != ESP01_OK)
-        ESP01_RETURN_ERROR("CWLAP", st);
+        ESP01_RETURN_ERROR("CWLAP", st); // Retourne une erreur si le scan échoue
 
-    char *line = strtok(resp, "\r\n");
-    while (line && *found_networks < max_networks)
+    char *line = strtok(resp, "\r\n");             // Découpe la réponse en lignes
+    while (line && *found_networks < max_networks) // Parcourt chaque ligne tant qu'il reste de la place
     {
-        if (strncmp(line, "+CWLAP:", 7) == 0)
+        if (strncmp(line, "+CWLAP:", 7) == 0) // Si la ligne commence par +CWLAP:
         {
-            int ecn = 0, rssi = 0, channel = 0;
-            char ssid[ESP01_MAX_SSID_BUF] = {0};
-            char mac[ESP01_MAX_MAC_LEN] = {0};
-            if (sscanf(line, "+CWLAP:(%d,\"%32[^\"]\",%d,\"%17[^\"]\",%d)", &ecn, ssid, &rssi, mac, &channel) >= 4)
+            int ecn = 0, rssi = 0, channel = 0;                                                                     // Variables temporaires pour le parsing
+            char ssid[ESP01_MAX_SSID_BUF] = {0};                                                                    // Buffer pour le SSID
+            char mac[ESP01_MAX_MAC_LEN] = {0};                                                                      // Buffer pour la MAC
+            if (sscanf(line, "+CWLAP:(%d,\"%32[^\"]\",%d,\"%17[^\"]\",%d)", &ecn, ssid, &rssi, mac, &channel) >= 4) // Parse la ligne
             {
-                size_t ssid_len = strlen(ssid);
+                size_t ssid_len = strlen(ssid); // Longueur du SSID
                 if (esp01_check_buffer_size(ssid_len, sizeof(networks[*found_networks].ssid) - 1) != ESP01_OK)
-                    continue;
-                strncpy(networks[*found_networks].ssid, ssid, ESP01_MAX_SSID_LEN);
-                networks[*found_networks].ssid[ESP01_MAX_SSID_LEN] = 0;
-                networks[*found_networks].rssi = rssi;
-                snprintf(networks[*found_networks].encryption, sizeof(networks[*found_networks].encryption), "%d", ecn);
-                (*found_networks)++;
+                    continue;                                                                                            // Ignore si le buffer est trop petit
+                esp01_safe_strcpy(networks[*found_networks].ssid, ESP01_MAX_SSID_BUF, ssid);                             // Copie le SSID
+                networks[*found_networks].ssid[ESP01_MAX_SSID_LEN] = 0;                                                  // Termine la chaîne
+                networks[*found_networks].rssi = rssi;                                                                   // Stocke le RSSI
+                snprintf(networks[*found_networks].encryption, sizeof(networks[*found_networks].encryption), "%d", ecn); // Stocke l'encryptage
+                (*found_networks)++;                                                                                     // Incrémente le compteur
             }
         }
-        line = strtok(NULL, "\r\n");
+        line = strtok(NULL, "\r\n"); // Passe à la ligne suivante
     }
-    ESP01_LOG_INFO("CWLAP", "Scan terminé : %d réseau(x) trouvé(s)", *found_networks);
-    return ESP01_OK;
+    ESP01_LOG_INFO("CWLAP", "Scan terminé : %d réseau(x) trouvé(s)", *found_networks); // Log le résultat du scan
+    return ESP01_OK;                                                                   // Retourne OK
 }
 
 char *esp01_print_wifi_networks(char *out, size_t out_size)
 {
-    VALIDATE_PARAM(out && out_size > 0, NULL);
-    esp01_network_t nets[ESP01_MAX_SCAN_NETWORKS];
-    uint8_t found = 0;
-    ESP01_Status_t st = esp01_scan_networks(nets, ESP01_MAX_SCAN_NETWORKS, &found);
-    size_t pos = 0;
-    pos += snprintf(out + pos, out_size - pos, "Scan WiFi : %s\n", esp01_get_error_string(st));
-    for (uint8_t i = 0; i < found && pos < out_size - 1; i++)
+    VALIDATE_PARAM(out && out_size > 0, NULL);                                                  // Vérifie les paramètres
+    esp01_network_t nets[ESP01_MAX_SCAN_NETWORKS];                                              // Tableau pour les réseaux trouvés
+    uint8_t found = 0;                                                                          // Nombre de réseaux trouvés
+    ESP01_Status_t st = esp01_scan_networks(nets, ESP01_MAX_SCAN_NETWORKS, &found);             // Scan réseaux
+    size_t pos = 0;                                                                             // Position d'écriture dans le buffer
+    pos += snprintf(out + pos, out_size - pos, "Scan WiFi : %s\n", esp01_get_error_string(st)); // Ajoute le statut du scan
+    for (uint8_t i = 0; i < found && pos < out_size - 1; i++)                                   // Parcourt les réseaux trouvés
     {
-        pos += snprintf(out + pos, out_size - pos, "[%u] SSID:%s RSSI:%d ENC:%s\n",
-                        i + 1, nets[i].ssid, nets[i].rssi, nets[i].encryption);
+        int written = snprintf(out + pos, out_size - pos, "[%u] SSID:%s RSSI:%d ENC:%s\n",
+                               i + 1, nets[i].ssid, nets[i].rssi, nets[i].encryption); // Ajoute chaque réseau
+        if (esp01_check_buffer_size(written, out_size - pos - 1) != ESP01_OK)
+            break;      // Arrête si le buffer est plein
+        pos += written; // Avance la position d'écriture
     }
-    return out;
+    return out; // Retourne le buffer rempli
 }
 
 /* --- DHCP --- */
 ESP01_Status_t esp01_set_dhcp(bool enable)
 {
-    char cmd[ESP01_MAX_CMD_BUF];
-    snprintf(cmd, sizeof(cmd), "AT+CWDHCP=1,%d", enable ? 1 : 0);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    char cmd[ESP01_MAX_CMD_BUF];                                                                     // Buffer pour la commande
+    snprintf(cmd, sizeof(cmd), "AT+CWDHCP=1,%d", enable ? 1 : 0);                                    // Prépare la commande
+    char resp[ESP01_MAX_RESP_BUF];                                                                   // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
         ESP01_RETURN_ERROR("CWDHCP", st);
     ESP01_LOG_INFO("CWDHCP", "DHCP %s", enable ? "activé" : "désactivé");
@@ -199,14 +214,14 @@ ESP01_Status_t esp01_set_dhcp(bool enable)
 
 ESP01_Status_t esp01_get_dhcp(bool *enabled)
 {
-    VALIDATE_PARAM(enabled, ESP01_INVALID_PARAM);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWDHCP?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    VALIDATE_PARAM(enabled, ESP01_INVALID_PARAM);                                                             // Vérifie le pointeur de sortie
+    char resp[ESP01_MAX_RESP_BUF];                                                                            // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWDHCP?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
         ESP01_RETURN_ERROR("CWDHCP?", st);
 
     int32_t dhcp_mode = 0;
-    if (esp01_parse_int_after(resp, "+CWDHCP:", &dhcp_mode) == ESP01_OK)
+    if (esp01_parse_int_after(resp, "+CWDHCP:", &dhcp_mode) == ESP01_OK) // Extrait le mode DHCP
     {
         *enabled = (dhcp_mode & 0x01) ? true : false;
         ESP01_LOG_INFO("CWDHCP?", "DHCP lu : %s", *enabled ? "activé" : "désactivé");
@@ -220,8 +235,8 @@ ESP01_Status_t esp01_get_dhcp(bool *enabled)
 /* --- Connexion/Déconnexion WiFi --- */
 ESP01_Status_t esp01_disconnect_wifi(void)
 {
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWQAP", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    char resp[ESP01_MAX_RESP_BUF];                                                                          // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWQAP", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
         ESP01_RETURN_ERROR("CWQAP", st);
     ESP01_LOG_INFO("CWQAP", "Déconnexion WiFi réussie");
@@ -230,11 +245,11 @@ ESP01_Status_t esp01_disconnect_wifi(void)
 
 ESP01_Status_t esp01_connect_wifi(const char *ssid, const char *password)
 {
-    VALIDATE_PARAM(ssid && password, ESP01_INVALID_PARAM);
-    char cmd[ESP01_MAX_CMD_BUF];
-    snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"", ssid, password);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), "OK", ESP01_TIMEOUT_LONG);
+    VALIDATE_PARAM(ssid && password, ESP01_INVALID_PARAM);                                             // Vérifie les paramètres
+    char cmd[ESP01_MAX_CMD_BUF];                                                                       // Buffer pour la commande
+    snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"", ssid, password);                              // Prépare la commande
+    char resp[ESP01_MAX_RESP_BUF];                                                                     // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), "OK", ESP01_TIMEOUT_LONG); // Envoie la commande
 
     if (st == ESP01_OK)
     {
@@ -253,9 +268,9 @@ ESP01_Status_t esp01_connect_wifi(const char *ssid, const char *password)
 /* --- IP, MAC, Hostname --- */
 ESP01_Status_t esp01_get_current_ip(char *ip, size_t ip_size)
 {
-    VALIDATE_PARAM(ip && ip_size > 0, ESP01_INVALID_PARAM);
-    char resp[ESP01_MAX_RESP_BUF] = {0};
-    ESP01_Status_t status = esp01_send_at_with_resp("AT+CIFSR", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    VALIDATE_PARAM(ip && ip_size > 0, ESP01_INVALID_PARAM);                                                     // Vérifie les paramètres
+    char resp[ESP01_MAX_RESP_BUF] = {0};                                                                        // Buffer pour la réponse
+    ESP01_Status_t status = esp01_send_at_with_resp("AT+CIFSR", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (status != ESP01_OK)
         ESP01_RETURN_ERROR("CIFSR", status);
 
@@ -263,14 +278,9 @@ ESP01_Status_t esp01_get_current_ip(char *ip, size_t ip_size)
     for (unsigned i = 0; i < sizeof(patterns) / sizeof(patterns[0]); ++i)
     {
         char tmp[ESP01_MAX_IP_LEN] = {0};
-        if (esp01_extract_quoted_value(resp, patterns[i], tmp, sizeof(tmp)))
+        if (esp01_extract_quoted_value(resp, patterns[i], tmp, sizeof(tmp))) // Extrait l'IP
         {
-            if (esp01_check_buffer_size(strlen(tmp), ip_size - 1) != ESP01_OK)
-                return ESP01_BUFFER_OVERFLOW;
-            strncpy(ip, tmp, ip_size - 1);
-            ip[ip_size - 1] = 0;
-            ESP01_LOG_INFO("CIFSR", "Motif trouvé : %s, IP : %s", patterns[i], ip);
-            return ESP01_OK;
+            return esp01_safe_strcpy(ip, ip_size, tmp);
         }
     }
     ESP01_LOG_WARN("CIFSR", "Aucun motif IP trouvé dans : %s", resp);
@@ -280,83 +290,83 @@ ESP01_Status_t esp01_get_current_ip(char *ip, size_t ip_size)
 
 ESP01_Status_t esp01_get_ip_config(char *ip, size_t ip_len, char *gw, size_t gw_len, char *mask, size_t mask_len)
 {
-    VALIDATE_PARAM(ip && ip_len > 0 && gw && gw_len > 0 && mask && mask_len > 0, ESP01_INVALID_PARAM);
-    char resp[ESP01_MAX_RESP_BUF] = {0};
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CIPSTA?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    VALIDATE_PARAM(ip && ip_len > 0 && gw && gw_len > 0 && mask && mask_len > 0, ESP01_INVALID_PARAM);        // Vérifie les paramètres
+    char resp[ESP01_MAX_RESP_BUF] = {0};                                                                      // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CIPSTA?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
         ESP01_RETURN_ERROR("CIPSTA?", st);
 
     snprintf(ip, ip_len, "N/A");
     snprintf(gw, gw_len, "N/A");
     snprintf(mask, mask_len, "N/A");
-    esp01_extract_quoted_value(resp, "+CIPSTA:ip:\"", ip, ip_len);
-    esp01_extract_quoted_value(resp, "+CIPSTA:gateway:\"", gw, gw_len);
-    esp01_extract_quoted_value(resp, "+CIPSTA:netmask:\"", mask, mask_len);
+    esp01_extract_quoted_value(resp, "+CIPSTA:ip:\"", ip, ip_len);          // Extrait l'IP
+    esp01_extract_quoted_value(resp, "+CIPSTA:gateway:\"", gw, gw_len);     // Extrait la gateway
+    esp01_extract_quoted_value(resp, "+CIPSTA:netmask:\"", mask, mask_len); // Extrait le masque
     ESP01_LOG_INFO("CIPSTA?", "IP: %s, GW: %s, MASK: %s", ip, gw, mask);
     return (ip[0] != 0 && strcmp(ip, "N/A") != 0) ? ESP01_OK : ESP01_FAIL;
 }
 
 ESP01_Status_t esp01_get_rssi(int *rssi)
 {
-    VALIDATE_PARAM(rssi, ESP01_INVALID_PARAM);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWJAP?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    VALIDATE_PARAM(rssi, ESP01_INVALID_PARAM);                                                               // Vérifie le pointeur de sortie
+    char resp[ESP01_MAX_RESP_BUF];                                                                           // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWJAP?", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
-        ESP01_RETURN_ERROR("CWJAP?", st);
+        ESP01_RETURN_ERROR("CWJAP?", st); // Retourne une erreur si la commande échoue
 
-    char *line = strstr(resp, "+CWJAP:");
+    char *line = strstr(resp, "+CWJAP:"); // Cherche le motif dans la réponse
     if (line)
     {
-        int virgule = 0;
-        while (*line && virgule < 3)
+        int virgule = 0;             // Compteur de virgules pour trouver la bonne position
+        while (*line && virgule < 3) // Avance jusqu'à la 3ème virgule
         {
             if (*line == ',')
                 virgule++;
             line++;
         }
         while (*line == ' ')
-            line++;
-        int rssi_val = 0;
-        if (sscanf(line, "%d", &rssi_val) == 1)
+            line++;                             // Ignore les espaces
+        int rssi_val = 0;                       // Variable temporaire pour le RSSI
+        if (sscanf(line, "%d", &rssi_val) == 1) // Extrait le RSSI
         {
-            *rssi = rssi_val;
-            ESP01_LOG_INFO("CWJAP?", "Motif trouvé : +CWJAP, RSSI : %d", *rssi);
-            return ESP01_OK;
+            *rssi = rssi_val;                                                    // Stocke le RSSI dans la variable de sortie
+            ESP01_LOG_INFO("CWJAP?", "Motif trouvé : +CWJAP, RSSI : %d", *rssi); // Log le RSSI
+            return ESP01_OK;                                                     // Retourne OK
         }
     }
-    ESP01_LOG_WARN("CWJAP?", "RSSI non trouvé dans : %s", resp);
-    return ESP01_FAIL;
+    ESP01_LOG_WARN("CWJAP?", "RSSI non trouvé dans : %s", resp); // Log si le RSSI n'est pas trouvé
+    return ESP01_FAIL;                                           // Retourne une erreur
 }
 
 ESP01_Status_t esp01_get_mac(char *mac_buf, size_t buf_len)
 {
-    VALIDATE_PARAM(mac_buf && buf_len > 0, ESP01_INVALID_PARAM);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CIFSR", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    VALIDATE_PARAM(mac_buf && buf_len > 0, ESP01_INVALID_PARAM);                                            // Vérifie les paramètres
+    char resp[ESP01_MAX_RESP_BUF];                                                                          // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CIFSR", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
-        ESP01_RETURN_ERROR("CIFSR", st);
+        ESP01_RETURN_ERROR("CIFSR", st); // Retourne une erreur si la commande échoue
 
-    char tmp[ESP01_MAX_MAC_LEN] = {0};
-    if (esp01_extract_quoted_value(resp, "STAMAC,\"", tmp, sizeof(tmp)))
+    char tmp[ESP01_MAX_MAC_LEN] = {0};                                   // Buffer temporaire pour la MAC
+    if (esp01_extract_quoted_value(resp, "STAMAC,\"", tmp, sizeof(tmp))) // Extrait la MAC
     {
         if (esp01_check_buffer_size(strlen(tmp), buf_len - 1) != ESP01_OK)
-            return ESP01_BUFFER_OVERFLOW;
-        strncpy(mac_buf, tmp, buf_len - 1);
-        mac_buf[buf_len - 1] = 0;
-        ESP01_LOG_INFO("CIFSR", "Motif trouvé : STAMAC, MAC : %s", mac_buf);
-        return ESP01_OK;
+            return ESP01_BUFFER_OVERFLOW;                                    // Vérifie la taille du buffer
+        strncpy(mac_buf, tmp, buf_len - 1);                                  // Copie la MAC dans le buffer utilisateur
+        mac_buf[buf_len - 1] = 0;                                            // Termine la chaîne
+        ESP01_LOG_INFO("CIFSR", "Motif trouvé : STAMAC, MAC : %s", mac_buf); // Log la MAC
+        return ESP01_OK;                                                     // Retourne OK
     }
-    ESP01_LOG_WARN("CIFSR", "MAC non trouvée dans : %s", resp);
-    return ESP01_FAIL;
+    ESP01_LOG_WARN("CIFSR", "MAC non trouvée dans : %s", resp); // Log si la MAC n'est pas trouvée
+    return ESP01_FAIL;                                          // Retourne une erreur
 }
 
 ESP01_Status_t esp01_set_hostname(const char *hostname)
 {
-    VALIDATE_PARAM(hostname, ESP01_INVALID_PARAM);
-    char cmd[ESP01_MAX_CMD_BUF];
-    snprintf(cmd, sizeof(cmd), "AT+CWHOSTNAME=\"%s\"", hostname);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    VALIDATE_PARAM(hostname, ESP01_INVALID_PARAM);                                                   // Vérifie le paramètre
+    char cmd[ESP01_MAX_CMD_BUF];                                                                     // Buffer pour la commande
+    snprintf(cmd, sizeof(cmd), "AT+CWHOSTNAME=\"%s\"", hostname);                                    // Prépare la commande
+    char resp[ESP01_MAX_RESP_BUF];                                                                   // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (st != ESP01_OK)
         ESP01_RETURN_ERROR("CWHOSTNAME", st);
     ESP01_LOG_INFO("CWHOSTNAME", "Hostname défini : %s", hostname);
@@ -375,213 +385,239 @@ ESP01_Status_t esp01_set_hostname(const char *hostname)
         return esp01_copy_resp(out, out_size, resp);                                                        \
     }
 
-ESP01_COPY_RESP_FUNC(esp01_get_wifi_connection, "AT+CWJAP?")
-ESP01_COPY_RESP_FUNC(esp01_get_dhcp_status, "AT+CWDHCP?")
-ESP01_COPY_RESP_FUNC(esp01_get_ip_info, "AT+CIPSTA?")
-ESP01_COPY_RESP_FUNC(esp01_get_hostname, "AT+CWHOSTNAME?")
-ESP01_COPY_RESP_FUNC(esp01_get_ap_config, "AT+CWSAP?")
-ESP01_COPY_RESP_FUNC(esp01_get_wifi_state, "AT+CWSTATE?")
+ESP01_COPY_RESP_FUNC(esp01_get_wifi_connection, "AT+CWJAP?") // Récupère le statut de connexion WiFi
+ESP01_COPY_RESP_FUNC(esp01_get_dhcp_status, "AT+CWDHCP?")    // Récupère le statut DHCP
+ESP01_COPY_RESP_FUNC(esp01_get_ip_info, "AT+CIPSTA?")        // Récupère les infos IP
+ESP01_COPY_RESP_FUNC(esp01_get_hostname, "AT+CWHOSTNAME?")   // Récupère le hostname
+ESP01_COPY_RESP_FUNC(esp01_get_ap_config, "AT+CWSAP?")       // Récupère la configuration du point d'accès
+ESP01_COPY_RESP_FUNC(esp01_get_wifi_state, "AT+CWSTATE?")    // Récupère l'état WiFi
 
 /* --- TCP/IP & Réseau --- */
 ESP01_Status_t esp01_ping(const char *host)
 {
-    VALIDATE_PARAM(host, ESP01_INVALID_PARAM);
-    char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF];
-    snprintf(cmd, sizeof(cmd), "AT+PING=\"%s\"", host);
-    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", 5000, resp, sizeof(resp));
+    VALIDATE_PARAM(host, ESP01_INVALID_PARAM);                                        // Vérifie le paramètre
+    char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF];                            // Buffers pour la commande et la réponse
+    snprintf(cmd, sizeof(cmd), "AT+PING=\"%s\"", host);                               // Prépare la commande
+    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", 5000, resp, sizeof(resp)); // Envoie la commande
     ESP01_LOG_INFO("PING", "Réponse : %s", resp);
     return (st == ESP01_OK) ? ESP01_OK : ESP01_FAIL;
 }
 
 ESP01_Status_t esp01_open_connection(const char *type, const char *addr, int port)
 {
-    VALIDATE_PARAM(type && addr && port > 0, ESP01_INVALID_PARAM);
-    char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF];
-    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"%s\",\"%s\",%d", type, addr, port);
-    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", 10000, resp, sizeof(resp));
+    VALIDATE_PARAM(type && addr && port > 0, ESP01_INVALID_PARAM);                     // Vérifie les paramètres
+    char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF];                             // Buffers pour la commande et la réponse
+    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"%s\",\"%s\",%d", type, addr, port);      // Prépare la commande
+    ESP01_Status_t st = esp01_send_at_with_resp(cmd, "OK", 10000, resp, sizeof(resp)); // Envoie la commande
     ESP01_LOG_INFO("CIPSTART", "Réponse : %s", resp);
     return (st == ESP01_OK) ? ESP01_OK : ESP01_FAIL;
 }
 
 ESP01_Status_t esp01_get_multiple_connections(bool *enabled)
 {
-    VALIDATE_PARAM(enabled, ESP01_INVALID_PARAM);
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CIPMUX?", "OK", 1000, resp, sizeof(resp));
+    VALIDATE_PARAM(enabled, ESP01_INVALID_PARAM);                                              // Vérifie le pointeur de sortie
+    char resp[ESP01_MAX_RESP_BUF];                                                             // Buffer pour la réponse
+    ESP01_Status_t st = esp01_send_at_with_resp("AT+CIPMUX?", "OK", 1000, resp, sizeof(resp)); // Envoie la commande AT+CIPMUX?
     if (st != ESP01_OK)
-        ESP01_RETURN_ERROR("CIPMUX?", st);
+        ESP01_RETURN_ERROR("CIPMUX?", st); // Retourne une erreur si la commande échoue
 
-    if (esp01_parse_bool_after(resp, "+CIPMUX:", enabled) == ESP01_OK)
+    if (esp01_parse_bool_after(resp, "+CIPMUX:", enabled) == ESP01_OK) // Extrait la valeur booléenne après le motif
     {
-        ESP01_LOG_INFO("CIPMUX", "Multi-connexion : %s", *enabled ? "ON" : "OFF");
-        return ESP01_OK;
+        ESP01_LOG_INFO("CIPMUX", "Multi-connexion : %s", *enabled ? "ON" : "OFF"); // Log l'état multi-connexion
+        return ESP01_OK;                                                           // Retourne OK si trouvé
     }
-    ESP01_LOG_WARN("CIPMUX?", "Motif non trouvé dans : %s", resp);
-    return ESP01_FAIL;
-}
-
-/* --- Configuration avancée --- */
-ESP01_Status_t esp01_connect_wifi_config(
-    ESP01_WifiMode_t mode,
-    const char *ssid,
-    const char *password,
-    bool use_dhcp,
-    const char *ip,
-    const char *gateway,
-    const char *netmask)
-{
-    ESP01_Status_t status;
-    char cmd[ESP01_MAX_RESP_BUF];
-    char resp[ESP01_MAX_RESP_BUF];
-
-    ESP01_LOG_INFO("WIFI", "=== Début configuration WiFi ===");
-
-    ESP01_LOG_INFO("WIFI", "Définition du mode WiFi...");
-    status = esp01_set_wifi_mode(mode);
-    ESP01_LOG_INFO("WIFI", "Set mode : %s", esp01_get_error_string(status));
-    if (status != ESP01_OK)
-    {
-        ESP01_LOG_ERROR("WIFI", "Erreur : esp01_set_wifi_mode");
-        return status;
-    }
-    HAL_Delay(300);
-
-    if (mode == ESP01_WIFI_MODE_AP)
-    {
-        ESP01_LOG_INFO("WIFI", "Configuration du point d'accès (AP)...");
-        snprintf(cmd, sizeof(cmd), "AT+CWSAP=\"%s\",\"%s\",5,3", ssid, password);
-        status = esp01_send_at_with_resp(cmd, "OK", 2000, resp, sizeof(resp));
-        ESP01_LOG_INFO("WIFI", "Set AP : %s", esp01_get_error_string(status));
-        if (status != ESP01_OK)
-        {
-            ESP01_LOG_ERROR("WIFI", "Erreur : Configuration AP");
-            return status;
-        }
-        HAL_Delay(300);
-
-        if (ip && strlen(ip) > 0)
-        {
-            ESP01_LOG_INFO("WIFI", "Configuration IP fixe AP...");
-            snprintf(cmd, sizeof(cmd), "AT+CIPAP=\"%s\"", ip);
-            status = esp01_send_at_with_resp(cmd, "OK", 2000, resp, sizeof(resp));
-            ESP01_LOG_INFO("WIFI", "Set IP AP : %s", esp01_get_error_string(status));
-            if (status != ESP01_OK)
-            {
-                ESP01_LOG_ERROR("WIFI", "Erreur : Configuration IP AP");
-                return status;
-            }
-        }
-    }
-
-    if (use_dhcp)
-    {
-        if (mode == ESP01_WIFI_MODE_STA)
-        {
-            ESP01_LOG_INFO("WIFI", "Activation du DHCP STA...");
-            status = esp01_send_at_with_resp("AT+CWDHCP=1,1", "OK", 2000, resp, sizeof(resp));
-        }
-        else if (mode == ESP01_WIFI_MODE_AP)
-        {
-            ESP01_LOG_INFO("WIFI", "Activation du DHCP AP...");
-            status = esp01_send_at_with_resp("AT+CWDHCP=2,1", "OK", 2000, resp, sizeof(resp));
-        }
-        ESP01_LOG_INFO("WIFI", "Set DHCP : %s", esp01_get_error_string(status));
-        if (status != ESP01_OK)
-        {
-            ESP01_LOG_ERROR("WIFI", "Erreur : Activation DHCP");
-            return status;
-        }
-    }
-    else if (ip && gateway && netmask && mode == ESP01_WIFI_MODE_STA)
-    {
-        ESP01_LOG_INFO("WIFI", "Déconnexion du WiFi (CWQAP)...");
-        esp01_send_at_with_resp("AT+CWQAP", "OK", 2000, resp, sizeof(resp));
-
-        ESP01_LOG_INFO("WIFI", "Désactivation du DHCP client...");
-        status = esp01_send_at_with_resp("AT+CWDHCP=0,1", "OK", 2000, resp, sizeof(resp));
-        ESP01_LOG_INFO("WIFI", "Set DHCP : %s", esp01_get_error_string(status));
-        if (status != ESP01_OK)
-        {
-            ESP01_LOG_ERROR("WIFI", "Erreur : Désactivation DHCP");
-            return status;
-        }
-        ESP01_LOG_INFO("WIFI", "Configuration IP statique...");
-        snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\",\"%s\",\"%s\"", ip, gateway, netmask);
-        status = esp01_send_at_with_resp(cmd, "OK", 2000, resp, sizeof(resp));
-        ESP01_LOG_INFO("WIFI", "Set IP statique : %s", esp01_get_error_string(status));
-        if (status != ESP01_OK)
-        {
-            ESP01_LOG_ERROR("WIFI", "Erreur : Configuration IP statique");
-            return status;
-        }
-    }
-
-    if (mode == ESP01_WIFI_MODE_STA)
-    {
-        ESP01_LOG_INFO("WIFI", "Connexion au réseau WiFi...");
-        status = esp01_connect_wifi(ssid, password);
-        ESP01_LOG_INFO("WIFI", "Connexion WiFi : %s", esp01_get_error_string(status));
-        if (status != ESP01_OK)
-        {
-            ESP01_LOG_ERROR("WIFI", "Erreur : Connexion WiFi (CWJAP)");
-            return status;
-        }
-        HAL_Delay(300);
-    }
-
-    ESP01_LOG_INFO("WIFI", "Activation de l'affichage IP client dans +IPD (AT+CIPDINFO=1)...");
-    status = esp01_send_at_with_resp("AT+CIPDINFO=1", "OK", 2000, resp, sizeof(resp));
-    ESP01_LOG_INFO("WIFI", "Set CIPDINFO : %s", esp01_get_error_string(status));
-    if (status != ESP01_OK)
-    {
-        ESP01_LOG_ERROR("WIFI", "Erreur : AT+CIPDINFO=1");
-        return status;
-    }
-
-    ESP01_LOG_INFO("WIFI", "=== Configuration WiFi terminée ===");
-    return ESP01_OK;
+    ESP01_LOG_WARN("CIPMUX?", "Motif non trouvé dans : %s", resp); // Log si le motif n'est pas trouvé
+    return ESP01_FAIL;                                             // Retourne une erreur
 }
 
 ESP01_Status_t esp01_set_ip(const char *ip, const char *gw, const char *mask)
 {
-    VALIDATE_PARAM(ip, ESP01_INVALID_PARAM);
-    char cmd[ESP01_MAX_CMD_BUF];
-    int needed = 0;
+    VALIDATE_PARAM(ip, ESP01_INVALID_PARAM); // Vérifie le paramètre IP
+    char cmd[ESP01_MAX_CMD_BUF];             // Buffer pour la commande AT
+    int needed = 0;                          // Variable pour la taille de la commande
     if (gw && mask)
-        needed = snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\",\"%s\",\"%s\"", ip, gw, mask);
+        needed = snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\",\"%s\",\"%s\"", ip, gw, mask); // Commande avec IP, GW, masque
     else if (gw)
-        needed = snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\",\"%s\"", ip, gw);
+        needed = snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\",\"%s\"", ip, gw); // Commande avec IP, GW
     else
-        needed = snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\"", ip);
+        needed = snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\"", ip); // Commande avec IP seule
 
     if (esp01_check_buffer_size(needed, sizeof(cmd) - 1) != ESP01_OK)
-        return ESP01_BUFFER_OVERFLOW;
+        return ESP01_BUFFER_OVERFLOW; // Vérifie la taille du buffer
 
-    char resp[ESP01_MAX_RESP_BUF] = {0};
-    return esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    char resp[ESP01_MAX_RESP_BUF] = {0};                                                // Buffer pour la réponse
+    return esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande et retourne le statut
 }
 
-/* --- Configuration Point d'Accès (AP) --- */
 ESP01_Status_t esp01_start_ap_config(const char *ssid, const char *password, int channel, int encryption)
 {
-    char cmd[ESP01_MAX_CMD_BUF];
-    char resp[ESP01_MAX_RESP_BUF] = {0};
-    ESP01_Status_t status;
+    char cmd[ESP01_MAX_CMD_BUF];         // Buffer pour la commande AT
+    char resp[ESP01_MAX_RESP_BUF] = {0}; // Buffer pour la réponse
+    ESP01_Status_t status;               // Variable pour le statut
 
-    VALIDATE_PARAM(ssid && ssid[0] != '\0' && strlen(ssid) <= ESP01_MAX_SSID_LEN, ESP01_INVALID_PARAM);
+    VALIDATE_PARAM(ssid && ssid[0] != '\0' && strlen(ssid) <= ESP01_MAX_SSID_LEN, ESP01_INVALID_PARAM); // Vérifie le SSID
     if (encryption != 0)
-        VALIDATE_PARAM(password && strlen(password) >= 8 && strlen(password) <= 64, ESP01_INVALID_PARAM);
-    VALIDATE_PARAM(channel >= 1 && channel <= 13, ESP01_INVALID_PARAM);
-    VALIDATE_PARAM(encryption == 0 || encryption == 2 || encryption == 3 || encryption == 4, ESP01_INVALID_PARAM);
+        VALIDATE_PARAM(password && strlen(password) >= 8 && strlen(password) <= 64, ESP01_INVALID_PARAM);          // Vérifie le mot de passe si crypté
+    VALIDATE_PARAM(channel >= 1 && channel <= 13, ESP01_INVALID_PARAM);                                            // Vérifie le canal
+    VALIDATE_PARAM(encryption == 0 || encryption == 2 || encryption == 3 || encryption == 4, ESP01_INVALID_PARAM); // Vérifie l'encryptage
 
-    snprintf(cmd, sizeof(cmd), "AT+CWSAP=\"%s\",\"%s\",%d,%d", ssid, password ? password : "", channel, encryption);
+    snprintf(cmd, sizeof(cmd), "AT+CWSAP=\"%s\",\"%s\",%d,%d", ssid, password ? password : "", channel, encryption); // Prépare la commande
 
-    status = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
+    status = esp01_send_at_with_resp(cmd, "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp)); // Envoie la commande
     if (status != ESP01_OK)
-        ESP01_RETURN_ERROR("CWSAP", status);
+        ESP01_RETURN_ERROR("CWSAP", status); // Retourne une erreur si la commande échoue
 
-    _esp_login(">>> [CWSAP] AP configuré : %s", ssid);
-    return ESP01_OK;
+    _esp_login(">>> [CWSAP] AP configuré : %s", ssid); // Log la configuration AP
+    return ESP01_OK;                                   // Retourne OK
+}
+
+/**
+ * @brief  Configure le WiFi en mode AP ou STA avec les paramètres fournis.
+ * @param  mode      Mode WiFi (STA, AP, STA+AP).
+ * @param  ssid      SSID du réseau WiFi.
+ * @param  password  Mot de passe du réseau WiFi (peut être NULL pour AP sans mot de passe).
+ * @param  use_dhcp  Indique si le DHCP doit être utilisé.
+ * @param  ip        IP statique (peut être NULL si DHCP est utilisé).
+ * @param  gateway   Gateway (peut être NULL si DHCP est utilisé).
+ * @param  netmask   Masque de sous-réseau (peut être NULL si DHCP est utilisé).
+ * @retval ESP01_Status_t
+ */
+ESP01_Status_t esp01_connect_wifi_config(
+    ESP01_WifiMode_t mode, // Mode WiFi (STA, AP, STA+AP)
+    const char *ssid,      // SSID du réseau WiFi
+    const char *password,  // Mot de passe du réseau WiFi (peut être NULL pour AP sans mot de passe)
+    bool use_dhcp,         // Indique si le DHCP doit être utilisé
+    const char *ip,        // IP statique (peut être NULL si DHCP est utilisé)
+    const char *gateway,   // Gateway (peut être NULL si DHCP est utilisé)
+    const char *netmask)   // Masque de sous-réseau (peut être NULL si DHCP est utilisé)
+{
+    ESP01_Status_t status;         // Variable pour le statut de la commande
+    char cmd[ESP01_MAX_RESP_BUF];  // Buffer pour la commande AT
+    char resp[ESP01_MAX_RESP_BUF]; // Buffer pour la réponse AT
+
+    ESP01_LOG_INFO("WIFI", "=== Début configuration WiFi ==="); // Log le début de la configuration WiFi
+
+    ESP01_LOG_INFO("WIFI", "Définition du mode WiFi...");                    // Log la définition du mode WiFi
+    status = esp01_set_wifi_mode(mode);                                      // Définit le mode WiFi
+    ESP01_LOG_INFO("WIFI", "Set mode : %s", esp01_get_error_string(status)); // Log le statut de la définition du mode
+    if (status != ESP01_OK)                                                  // Si la définition du mode échoue
+    {
+        ESP01_LOG_ERROR("WIFI", "Erreur : esp01_set_wifi_mode"); // Log l'erreur
+        return status;                                           // Retourne le statut d'erreur
+    }
+    HAL_Delay(300); // Attente pour stabiliser le module
+
+    if (mode == ESP01_WIFI_MODE_AP) // Si le mode est AP (point d'accès)
+    {
+        ESP01_LOG_INFO("WIFI", "Configuration du point d'accès (AP)...");
+        snprintf(cmd, sizeof(cmd), "AT+CWSAP=\"%s\",\"%s\",5,3", ssid, password); // Prépare la commande pour configurer l'AP
+        status = esp01_send_at_with_resp(cmd, "OK", 2000, resp, sizeof(resp));    // Envoie la commande
+        ESP01_LOG_INFO("WIFI", "Set AP : %s", esp01_get_error_string(status));    // Log le statut de la commande
+        if (status != ESP01_OK)                                                   // Si la configuration de l'AP échoue
+        {
+            ESP01_LOG_ERROR("WIFI", "Erreur : Configuration AP"); // Log l'erreur
+            return status;                                        // Retourne le statut d'erreur
+        }
+        HAL_Delay(300); // Attente pour stabiliser le module
+
+        if (ip && strlen(ip) > 0) // Si une IP fixe est fournie pour l'AP
+        {
+            ESP01_LOG_INFO("WIFI", "Configuration IP fixe AP...");                    // Log la configuration IP fixe
+            snprintf(cmd, sizeof(cmd), "AT+CIPAP=\"%s\"", ip);                        // Prépare la commande pour configurer l'IP de l'AP
+            status = esp01_send_at_with_resp(cmd, "OK", 2000, resp, sizeof(resp));    // Envoie la commande
+            ESP01_LOG_INFO("WIFI", "Set IP AP : %s", esp01_get_error_string(status)); // Log le statut de la configuration IP
+            if (status != ESP01_OK)                                                   // Si la configuration IP de l'AP échoue
+            {
+                ESP01_LOG_ERROR("WIFI", "Erreur : Configuration IP AP"); // Log l'erreur
+                return status;                                           // Retourne le statut d'erreur
+            }
+        }
+    }
+
+    if (use_dhcp) // Si le DHCP doit être utilisé
+    {
+        if (mode == ESP01_WIFI_MODE_STA) // Si le mode est STA (station)
+        {
+            ESP01_LOG_INFO("WIFI", "Activation du DHCP client...");                            // Log l'activation du DHCP client
+            status = esp01_send_at_with_resp("AT+CWDHCP=1,1", "OK", 2000, resp, sizeof(resp)); // Active le DHCP client
+        }
+        else if (mode == ESP01_WIFI_MODE_STA_AP) // Si le mode est STA+AP
+        {
+            ESP01_LOG_INFO("WIFI", "Activation du DHCP STA...");                               // Log l'activation du DHCP STA
+            status = esp01_send_at_with_resp("AT+CWDHCP=1,1", "OK", 2000, resp, sizeof(resp)); // Active le DHCP pour la station
+        }
+        else if (mode == ESP01_WIFI_MODE_AP) // Si le mode est AP (point d'accès)
+        {
+            ESP01_LOG_INFO("WIFI", "Activation du DHCP AP...");                                // Log l'activation du DHCP pour l'AP
+            status = esp01_send_at_with_resp("AT+CWDHCP=2,1", "OK", 2000, resp, sizeof(resp)); // Active le DHCP pour l'AP
+        }
+        ESP01_LOG_INFO("WIFI", "Set DHCP : %s", esp01_get_error_string(status)); // Log le statut de l'activation du DHCP
+        if (status != ESP01_OK)                                                  // Si l'activation du DHCP échoue
+        {
+            ESP01_LOG_ERROR("WIFI", "Erreur : Activation DHCP"); // Log l'erreur
+            return status;                                       // Retourne le statut d'erreur
+        }
+    }
+    else if (ip && gateway && netmask && mode == ESP01_WIFI_MODE_STA) // Si une IP statique est fournie et le mode est STA
+    {
+        ESP01_LOG_INFO("WIFI", "Déconnexion du WiFi (CWQAP)...");            // Log la déconnexion du WiFi
+        esp01_send_at_with_resp("AT+CWQAP", "OK", 2000, resp, sizeof(resp)); // Déconnecte le WiFi
+
+        ESP01_LOG_INFO("WIFI", "Désactivation du DHCP client...");                         // Log la désactivation du DHCP client
+        status = esp01_send_at_with_resp("AT+CWDHCP=0,1", "OK", 2000, resp, sizeof(resp)); // Désactive le DHCP client
+        ESP01_LOG_INFO("WIFI", "Set DHCP : %s", esp01_get_error_string(status));           // Log le statut de la désactivation du DHCP
+        if (status != ESP01_OK)                                                            // Si la désactivation du DHCP échoue
+        {
+            ESP01_LOG_ERROR("WIFI", "Erreur : Désactivation DHCP"); // Log l'erreur
+            return status;                                          // Retourne le statut d'erreur
+        }
+        ESP01_LOG_INFO("WIFI", "Configuration IP statique...");                             // Log la configuration de l'IP statique
+        snprintf(cmd, sizeof(cmd), "AT+CIPSTA=\"%s\",\"%s\",\"%s\"", ip, gateway, netmask); // Prépare la commande pour configurer l'IP statique
+        status = esp01_send_at_with_resp(cmd, "OK", 2000, resp, sizeof(resp));              // Envoie la commande
+        ESP01_LOG_INFO("WIFI", "Set IP statique : %s", esp01_get_error_string(status));     // Log le statut de la configuration IP statique
+        if (status != ESP01_OK)                                                             // Si la configuration de l'IP statique échoue
+        {
+            ESP01_LOG_ERROR("WIFI", "Erreur : Configuration IP statique"); // Log l'erreur
+            return status;                                                 // Retourne le statut d'erreur
+        }
+    }
+
+    if (mode == ESP01_WIFI_MODE_STA) // Si le mode est STA (station)
+    {
+        ESP01_LOG_INFO("WIFI", "Connexion au réseau WiFi...");                         // Log la connexion au réseau WiFi
+        status = esp01_connect_wifi(ssid, password);                                   // Tente de se connecter au réseau WiFi
+        ESP01_LOG_INFO("WIFI", "Connexion WiFi : %s", esp01_get_error_string(status)); // Log le statut de la connexion
+        if (status != ESP01_OK)                                                        // Si la connexion échoue
+        {
+            ESP01_LOG_ERROR("WIFI", "Erreur : Connexion WiFi (CWJAP)"); // Log l'erreur
+            return status;                                              // Retourne le statut d'erreur
+        }
+        HAL_Delay(300); // Attente pour stabiliser la connexion
+    }
+    else if (mode == ESP01_WIFI_MODE_STA_AP) // Si le mode est STA+AP
+    {
+        ESP01_LOG_INFO("WIFI", "Connexion au réseau WiFi...");                         // Log la connexion au réseau WiFi
+        status = esp01_connect_wifi(ssid, password);                                   // Tente de se connecter au réseau WiFi
+        ESP01_LOG_INFO("WIFI", "Connexion WiFi : %s", esp01_get_error_string(status)); // Log le statut de la connexion
+        if (status != ESP01_OK)                                                        // Si la connexion échoue
+        {
+            ESP01_LOG_ERROR("WIFI", "Erreur : Connexion WiFi (CWJAP)"); // Log l'erreur
+            return status;                                              // Retourne le statut d'erreur
+        }
+        HAL_Delay(300); // Attente pour stabiliser la connexion
+    }
+
+    ESP01_LOG_INFO("WIFI", "Activation de l'affichage IP client dans +IPD (AT+CIPDINFO=1)..."); // Log l'activation de l'affichage IP client
+    status = esp01_send_at_with_resp("AT+CIPDINFO=1", "OK", 2000, resp, sizeof(resp));          // Active l'affichage IP client
+    ESP01_LOG_INFO("WIFI", "Set CIPDINFO : %s", esp01_get_error_string(status));                // Log le statut de l'activation
+    if (status != ESP01_OK)                                                                     // Si l'activation de l'affichage IP client échoue
+    {
+        ESP01_LOG_ERROR("WIFI", "Erreur : AT+CIPDINFO=1"); // Log l'erreur
+        return status;                                     // Retourne le statut d'erreur
+    }
+
+    ESP01_LOG_INFO("WIFI", "=== Configuration WiFi terminée ==="); // Log la fin de la configuration WiFi
+    return ESP01_OK;                                               // Retourne OK si tout s'est bien passé
 }
 
 /* ========================== FONCTIONS UTILITAIRES ========================== */
@@ -589,26 +625,26 @@ ESP01_Status_t esp01_start_ap_config(const char *ssid, const char *password, int
 const char *esp01_encryption_to_string(const char *enc)
 {
     if (!enc)
-        return "INCONNU";
+        return "INCONNU"; // Retourne inconnu si NULL
     if (strcmp(enc, "0") == 0)
-        return "Open";
+        return "Open"; // Aucun chiffrement
     if (strcmp(enc, "1") == 0)
-        return "WEP";
+        return "WEP"; // WEP
     if (strcmp(enc, "2") == 0)
-        return "WPA_PSK";
+        return "WPA_PSK"; // WPA_PSK
     if (strcmp(enc, "3") == 0)
-        return "WPA2_PSK";
+        return "WPA2_PSK"; // WPA2_PSK
     if (strcmp(enc, "4") == 0)
-        return "WPA_WPA2_PSK";
-    return "INCONNU";
+        return "WPA_WPA2_PSK"; // WPA/WPA2_PSK
+    return "INCONNU";          // Autre valeur
 }
 
 const char *esp01_tcp_status_to_string(const char *resp)
 {
-    static char buf[64];
-    char *line = strstr(resp, "STATUS:");
-    int code = -1;
-    if (line && sscanf(line, "STATUS:%d", &code) == 1)
+    static char buf[64];                               // Buffer statique pour la chaîne retournée
+    char *line = strstr(resp, "STATUS:");              // Cherche le motif STATUS:
+    int code = -1;                                     // Code de statut TCP
+    if (line && sscanf(line, "STATUS:%d", &code) == 1) // Extrait le code
     {
         switch (code)
         {
@@ -634,128 +670,128 @@ const char *esp01_tcp_status_to_string(const char *resp)
             snprintf(buf, sizeof(buf), "Inconnu (STATUS:%d)", code);
             break;
         }
-        return buf;
+        return buf; // Retourne la chaîne formatée
     }
-    return "Réponse TCP/IP inattendue";
+    return "Réponse TCP/IP inattendue"; // Si le motif n'est pas trouvé
 }
 
 const char *esp01_cwstate_to_string(const char *resp)
 {
-    static char buf[64];
-    char *line = strstr(resp, "+CWSTATE:");
-    int code = -1;
-    char ssid[ESP01_MAX_SSID_BUF] = {0};
+    static char buf[64];                    // Buffer statique pour la chaîne retournée
+    char *line = strstr(resp, "+CWSTATE:"); // Cherche le motif +CWSTATE:
+    int code = -1;                          // Code d'état
+    char ssid[ESP01_MAX_SSID_BUF] = {0};    // Buffer pour le SSID
     if (line)
     {
         if (sscanf(line, "+CWSTATE:%d,\"%[^\"]\"", &code, ssid) == 2)
-            snprintf(buf, sizeof(buf), "Connecté (état %d) à SSID: %s", code, ssid);
+            snprintf(buf, sizeof(buf), "Connecté (état %d) à SSID: %s", code, ssid); // Format connecté
         else if (sscanf(line, "+CWSTATE:%d", &code) == 1)
-            snprintf(buf, sizeof(buf), "État WiFi : %d", code);
+            snprintf(buf, sizeof(buf), "État WiFi : %d", code); // Format état seul
         else
-            snprintf(buf, sizeof(buf), "Format CWSTATE inconnu");
-        return buf;
+            snprintf(buf, sizeof(buf), "Format CWSTATE inconnu"); // Format inconnu
+        return buf;                                               // Retourne la chaîne formatée
     }
-    return "Réponse CWSTATE inattendue";
+    return "Réponse CWSTATE inattendue"; // Si le motif n'est pas trouvé
 }
 
 const char *esp01_connection_status_to_string(const char *resp)
 {
-    static char buf[64];
-    char *line = strstr(resp, "+CWJAP:");
+    static char buf[64];                  // Buffer statique pour la chaîne retournée
+    char *line = strstr(resp, "+CWJAP:"); // Cherche le motif +CWJAP:
     if (line)
     {
-        char ssid[ESP01_MAX_SSID_BUF] = {0};
+        char ssid[ESP01_MAX_SSID_BUF] = {0}; // Buffer pour le SSID
         if (sscanf(line, "+CWJAP:\"%[^\"]", ssid) == 1)
-            snprintf(buf, sizeof(buf), "Connecté à %s", ssid);
+            snprintf(buf, sizeof(buf), "Connecté à %s", ssid); // Format connecté avec SSID
         else
-            snprintf(buf, sizeof(buf), "Connecté (SSID inconnu)");
-        return buf;
+            snprintf(buf, sizeof(buf), "Connecté (SSID inconnu)"); // Format connecté sans SSID
+        return buf;                                                // Retourne la chaîne formatée
     }
-    return "Non connecté";
+    return "Non connecté"; // Si le motif n'est pas trouvé
 }
 
 const char *esp01_rf_power_to_string(int rf_dbm)
 {
-    static char buf[ESP01_MAX_CMD_BUF];
-    snprintf(buf, sizeof(buf), "%d dBm", rf_dbm);
-    return buf;
+    static char buf[ESP01_MAX_CMD_BUF];           // Buffer statique pour la chaîne retournée
+    snprintf(buf, sizeof(buf), "%d dBm", rf_dbm); // Formate la puissance RF
+    return buf;                                   // Retourne la chaîne formatée
 }
 
 const char *esp01_cwqap_to_string(const char *resp)
 {
     if (strstr(resp, "WIFI DISCONNECT"))
-        return "WIFI DISCONNECTED";
+        return "WIFI DISCONNECTED"; // Déconnexion détectée
     if (strstr(resp, "OK"))
-        return "OK";
-    return "Déconnexion OK";
+        return "OK";         // OK détecté
+    return "Déconnexion OK"; // Autre cas
 }
 
 const char *esp01_wifi_connection_to_string(const char *resp)
 {
-    static char buf[ESP01_MAX_RESP_BUF];
-    char ssid[ESP01_MAX_SSID_BUF] = {0};
+    static char buf[ESP01_MAX_RESP_BUF]; // Buffer statique pour la chaîne retournée
+    char ssid[ESP01_MAX_SSID_BUF] = {0}; // Buffer pour le SSID
     if (strstr(resp, "+CWJAP:"))
     {
         if (sscanf(resp, "+CWJAP:\"%[^\"]\"", ssid) == 1)
-            snprintf(buf, sizeof(buf), "Connecté à : %s", ssid);
+            snprintf(buf, sizeof(buf), "Connecté à : %s", ssid); // Format connecté avec SSID
         else
-            snprintf(buf, sizeof(buf), "Connecté (SSID inconnu)");
+            snprintf(buf, sizeof(buf), "Connecté (SSID inconnu)"); // Format connecté sans SSID
     }
     else if (strstr(resp, "No AP"))
     {
-        snprintf(buf, sizeof(buf), "Non connecté à un AP");
+        snprintf(buf, sizeof(buf), "Non connecté à un AP"); // Non connecté à un AP
     }
     else
     {
-        snprintf(buf, sizeof(buf), "Statut WiFi inconnu");
+        snprintf(buf, sizeof(buf), "Statut WiFi inconnu"); // Statut inconnu
     }
-    return buf;
+    return buf; // Retourne la chaîne formatée
 }
 
 const char *esp01_dhcp_status_to_string(const char *resp)
 {
-    static char buf[ESP01_MAX_RESP_BUF];
-    int mode = -1;
+    static char buf[ESP01_MAX_RESP_BUF]; // Buffer statique pour la chaîne retournée
+    int mode = -1;                       // Variable pour le mode DHCP
     if (sscanf(resp, "+CWDHCP:%d", &mode) == 1)
-        snprintf(buf, sizeof(buf), "DHCP %s", (mode & 1) ? "activé" : "désactivé");
+        snprintf(buf, sizeof(buf), "DHCP %s", (mode & 1) ? "activé" : "désactivé"); // Format activé/désactivé
     else
-        snprintf(buf, sizeof(buf), "Statut DHCP inconnu");
-    return buf;
+        snprintf(buf, sizeof(buf), "Statut DHCP inconnu"); // Statut inconnu
+    return buf;                                            // Retourne la chaîne formatée
 }
 
 const char *esp01_ip_info_to_string(const char *resp)
 {
-    static char buf[ESP01_MAX_RESP_BUF];
-    char ip[ESP01_SMALL_BUF_SIZE] = "N/A", gw[ESP01_SMALL_BUF_SIZE] = "N/A", mask[ESP01_SMALL_BUF_SIZE] = "N/A";
-    esp01_extract_quoted_value(resp, "+CIPSTA:ip:\"", ip, sizeof(ip));
-    esp01_extract_quoted_value(resp, "+CIPSTA:gateway:\"", gw, sizeof(gw));
-    esp01_extract_quoted_value(resp, "+CIPSTA:netmask:\"", mask, sizeof(mask));
-    snprintf(buf, sizeof(buf), "IP: %s, GW: %s, MASK: %s", ip, gw, mask);
-    return buf;
+    static char buf[ESP01_MAX_RESP_BUF];                                                                         // Buffer statique pour la chaîne retournée
+    char ip[ESP01_SMALL_BUF_SIZE] = "N/A", gw[ESP01_SMALL_BUF_SIZE] = "N/A", mask[ESP01_SMALL_BUF_SIZE] = "N/A"; // Buffers pour IP, GW, masque
+    esp01_extract_quoted_value(resp, "+CIPSTA:ip:\"", ip, sizeof(ip));                                           // Extrait l'IP
+    esp01_extract_quoted_value(resp, "+CIPSTA:gateway:\"", gw, sizeof(gw));                                      // Extrait la gateway
+    esp01_extract_quoted_value(resp, "+CIPSTA:netmask:\"", mask, sizeof(mask));                                  // Extrait le masque
+    snprintf(buf, sizeof(buf), "IP: %s, GW: %s, MASK: %s", ip, gw, mask);                                        // Formate la chaîne
+    return buf;                                                                                                  // Retourne la chaîne formatée
 }
 
 const char *esp01_hostname_raw_to_string(const char *resp)
 {
-    static char buf[ESP01_MAX_RESP_BUF];
-    char hostname[48] = "N/A";
-    esp01_extract_quoted_value(resp, "+CWHOSTNAME:\"", hostname, sizeof(hostname));
-    snprintf(buf, sizeof(buf), "Hostname: %s", hostname);
-    return buf;
+    static char buf[ESP01_MAX_RESP_BUF];                                            // Buffer statique pour la chaîne retournée
+    char hostname[48] = "N/A";                                                      // Buffer pour le hostname
+    esp01_extract_quoted_value(resp, "+CWHOSTNAME:\"", hostname, sizeof(hostname)); // Extrait le hostname
+    snprintf(buf, sizeof(buf), "Hostname: %s", hostname);                           // Formate la chaîne
+    return buf;                                                                     // Retourne la chaîne formatée
 }
 
 const char *esp01_ap_config_to_string(const char *resp)
 {
-    static char out[128];
-    char ssid[33] = {0};
-    char pwd[33] = {0};
-    int channel = 0, enc = 0, maxconn = 0, hidden = 0;
+    static char out[128];                              // Buffer statique pour la chaîne retournée
+    char ssid[33] = {0};                               // Buffer pour le SSID
+    char pwd[33] = {0};                                // Buffer pour le mot de passe
+    int channel = 0, enc = 0, maxconn = 0, hidden = 0; // Variables pour les paramètres AP
 
     // Recherche du motif +CWSAP:"SSID","PWD",channel,enc,maxconn,hidden
-    const char *start = strstr(resp, "+CWSAP:");
+    const char *start = strstr(resp, "+CWSAP:"); // Cherche le motif +CWSAP:
     if (start)
     {
         int n = sscanf(start, "+CWSAP:\"%32[^\"]\",\"%32[^\"]\",%d,%d,%d,%d",
-                       ssid, pwd, &channel, &enc, &maxconn, &hidden);
+                       ssid, pwd, &channel, &enc, &maxconn, &hidden); // Extrait les paramètres
         if (n >= 4)
         {
             snprintf(out, sizeof(out),
@@ -765,185 +801,27 @@ const char *esp01_ap_config_to_string(const char *resp)
                                        : (enc == 3)   ? "WPA2_PSK"
                                        : (enc == 4)   ? "WPA_WPA2_PSK"
                                                       : "Inconnu",
-                     maxconn, hidden);
-            return out;
+                     maxconn, hidden); // Formate la chaîne
+            return out;                // Retourne la chaîne formatée
         }
     }
-    return "Config AP inconnue";
-}
-
-/* --- dans la fonction de wrapper pour CWQAP... */
-ESP01_Status_t esp01_disconnect_ap(void)
-{
-    char resp[ESP01_MAX_RESP_BUF];
-    ESP01_Status_t st = esp01_send_at_with_resp("AT+CWQAP", "OK", ESP01_TIMEOUT_SHORT, resp, sizeof(resp));
-    if (st == ESP01_OK)
-    {
-        ESP01_LOG_INFO("CWQAP", "Déconnexion AP réussie");
-        return ESP01_OK;
-    }
-
-    if (strstr(resp, "ERROR"))
-    {
-        ESP01_LOG_ERROR("CWQAP", "Déconnexion refusée : %s", resp);
-        ESP01_RETURN_ERROR("CWQAP", ESP01_FAIL);
-    }
-
-    ESP01_LOG_ERROR("CWQAP", "Timeout ou réponse inattendue");
-    ESP01_RETURN_ERROR("CWQAP", ESP01_TIMEOUT);
+    return "Config AP inconnue"; // Si le motif n'est pas trouvé
 }
 
 const char *esp01_ping_result_to_string(const char *resp)
 {
-    static char result[ESP01_SMALL_BUF_SIZE];
-    const char *line = strstr(resp, "+PING:");
+    static char result[ESP01_SMALL_BUF_SIZE];  // Buffer statique pour la chaîne retournée
+    const char *line = strstr(resp, "+PING:"); // Cherche le motif +PING:
     if (line)
     {
-        int ms = 0;
+        int ms = 0; // Variable pour le temps de ping
         if (sscanf(line, "+PING:%d", &ms) == 1)
         {
-            snprintf(result, sizeof(result), "%d ms", ms);
-            return result;
+            snprintf(result, sizeof(result), "%d ms", ms); // Formate le résultat
+            return result;                                 // Retourne la chaîne formatée
         }
     }
-    return "Ping échoué";
+    return "Ping échoué"; // Si le motif n'est pas trouvé
 }
 
-/* ========================== TESTS MODULE WIFI ========================== */
 
-void test_wifi_module_STA(const char *ssid, const char *password)
-{
-    ESP01_Status_t status;
-    char buf[128], ip[ESP01_MAX_IP_LEN], mac[ESP01_MAX_MAC_LEN], hostname[ESP01_MAX_HOSTNAME_LEN];
-    int mode = 0, rssi = 0;
-    bool dhcp = false;
-    uint8_t found = 0;
-    esp01_network_t networks[ESP01_MAX_SCAN_NETWORKS];
-    char resp[ESP01_MAX_RESP_BUF];
-    HAL_Delay(1000);
-
-    // 1. Mode WiFi
-    ESP01_LOG_INFO("WIFI", "\n=== [CWMODE] Configuration du mode WiFi ===");
-    status = esp01_set_wifi_mode(ESP01_WIFI_MODE_STA);
-    ESP01_LOG_INFO("WIFI", ">>> [CWMODE] Set : %s\r\n", esp01_get_error_string(status));
-    HAL_Delay(500);
-    ESP01_LOG_INFO("WIFI", "\n=== [CWMODE] Lecture du mode WiFi ===");
-    status = esp01_get_wifi_mode(&mode);
-    ESP01_LOG_INFO("WIFI", ">>> [CWMODE] Get : %s (%d)\r\n", esp01_wifi_mode_to_string(mode), mode);
-    HAL_Delay(1000);
-
-    // 2. DHCP
-    ESP01_LOG_INFO("WIFI", "\n=== [CWDHCP] Configuration du DHCP ===");
-    status = esp01_set_dhcp(true);
-    ESP01_LOG_INFO("WIFI", ">>> [CWDHCP] Set : %s\r\n", esp01_get_error_string(status));
-    HAL_Delay(500);
-
-    ESP01_LOG_INFO("WIFI", "\n=== [CWDHCP] Lecture du DHCP ===");
-    status = esp01_get_dhcp(&dhcp);
-    ESP01_LOG_INFO("WIFI", ">>> [CWDHCP] Get : %s\r\n", dhcp ? "Activé" : "Désactivé");
-    HAL_Delay(1000);
-
-    // 3. Hostname
-    ESP01_LOG_INFO("WIFI", "\n=== [CWHOSTNAME] Configuration du hostname ===");
-    status = esp01_set_hostname("ESP-TEST");
-    ESP01_LOG_INFO("WIFI", ">>> [CWHOSTNAME] Set : %s", esp01_get_error_string(status));
-    HAL_Delay(500);
-
-    ESP01_LOG_INFO("WIFI", "\n=== [CWHOSTNAME] Lecture du hostname ===");
-    status = esp01_get_hostname(hostname, sizeof(hostname));
-    ESP01_LOG_INFO("WIFI", ">>> [CWHOSTNAME] Get : %s", hostname);
-    HAL_Delay(1000);
-
-    // 4. Scan réseaux
-    ESP01_LOG_INFO("WIFI", "\n=== [CWLAP] Scan des réseaux ===");
-    status = esp01_scan_networks(networks, ESP01_MAX_SCAN_NETWORKS, &found);
-    ESP01_LOG_INFO("WIFI", ">>> [CWLAP] Scan : %s (%d trouvés)", esp01_get_error_string(status), found);
-    if (status == ESP01_OK)
-    {
-        for (uint8_t i = 0; i < found; ++i)
-            ESP01_LOG_INFO("WIFI", "    SSID: %s, RSSI: %d, Sécu: %s", networks[i].ssid, networks[i].rssi, esp01_encryption_to_string(networks[i].encryption));
-    }
-    HAL_Delay(1000);
-
-    // 5. Connexion WiFi
-    ESP01_LOG_INFO("WIFI", "\n=== [CWJAP] Connexion WiFi ===");
-    status = esp01_connect_wifi(ssid, password);
-    ESP01_LOG_INFO("WIFI", ">>> [CWJAP] Connexion : %s\r\n", esp01_get_error_string(status));
-    HAL_Delay(1000);
-
-    status = esp01_get_wifi_connection(resp, sizeof(resp));
-    ESP01_LOG_INFO("WIFI", ">>> [CWJAP?] Statut : %s", (status == ESP01_OK) ? esp01_connection_status_to_string(resp) : esp01_get_error_string(status));
-    HAL_Delay(1000);
-
-    // 5b. Etat de la connexion WiFi (CWSTATE)
-    ESP01_LOG_INFO("WIFI", "\n=== [CWSTATE] Etat de la connexion WiFi ===");
-    status = esp01_get_wifi_state(resp, sizeof(resp));
-    ESP01_LOG_INFO("WIFI", ">>> [CWSTATE] Etat : %s", (status == ESP01_OK) ? esp01_cwstate_to_string(resp) : esp01_get_error_string(status));
-    HAL_Delay(1000);
-
-    // 6. Adresse IP
-    ESP01_LOG_INFO("WIFI", "\n=== [CIFSR] Adresse IP ===");
-    status = esp01_get_current_ip(ip, sizeof(ip));
-    ESP01_LOG_INFO("WIFI", ">>> [CIFSR] IP : %s", (status == ESP01_OK) ? ip : esp01_get_error_string(status));
-    HAL_Delay(1000);
-
-    // 7. Adresse MAC
-    ESP01_LOG_INFO("WIFI", "\n=== [CIFSR] Adresse MAC ===");
-    status = esp01_get_mac(mac, sizeof(mac));
-    ESP01_LOG_INFO("WIFI", ">>> [CIFSR] MAC : %s", (status == ESP01_OK) ? mac : esp01_get_error_string(status));
-    HAL_Delay(1000);
-
-    // 8. RSSI
-    ESP01_LOG_INFO("WIFI", "\n=== [CWJAP?] RSSI ===");
-    status = esp01_get_rssi(&rssi);
-    if (status == ESP01_OK)
-        ESP01_LOG_INFO("WIFI", ">>> [CWJAP?] RSSI : %s", esp01_rf_power_to_string(rssi));
-    else
-        ESP01_LOG_INFO("WIFI", ">>> [CWJAP?] RSSI : %s", esp01_get_error_string(status));
-    HAL_Delay(1000);
-
-    // 9. Statut TCP/IP
-    ESP01_LOG_INFO("WIFI", "\n=== [CIPSTATUS] Statut TCP/IP ===");
-    status = esp01_get_tcp_status(buf, sizeof(buf));
-    ESP01_LOG_INFO("WIFI", ">>> [CIPSTATUS] : %s", (status == ESP01_OK) ? esp01_tcp_status_to_string(buf) : esp01_get_error_string(status));
-    HAL_Delay(1000);
-
-    // 10. Ping
-    ESP01_LOG_INFO("WIFI", "\n=== [PING] Test du ping ===");
-    char ping_resp[ESP01_MAX_RESP_BUF] = {0};
-    snprintf(buf, sizeof(buf), "AT+PING=\"8.8.8.8\"");
-    status = esp01_send_raw_command_dma(buf, ping_resp, sizeof(ping_resp), "OK", 5000);
-    ESP01_LOG_INFO("WIFI", ">>> [PING] : %s", esp01_ping_result_to_string(ping_resp));
-    HAL_Delay(1000);
-
-    // 11. Déconnexion WiFi
-    ESP01_LOG_INFO("WIFI", "\n=== [CWQAP] Déconnexion WiFi ===");
-    memset(resp, 0, sizeof(resp)); // Vide le buffer si besoin
-    status = esp01_disconnect_wifi();
-    ESP01_LOG_INFO("WIFI", ">>> [CWQAP] : %s", (status == ESP01_OK) ? esp01_cwqap_to_string(resp) : esp01_get_error_string(status));
-    HAL_Delay(1000);
-}
-
-void test_wifi_module_AP(const char *ssid, const char *password)
-{
-    char resp[ESP01_MAX_RESP_BUF] = {0};
-    ESP01_Status_t status;
-
-    // === [CWMODE] Configuration du mode AP ===
-    ESP01_LOG_INFO("WIFI", "\n=== [CWMODE] Configuration du mode WiFi (AP) ===");
-    status = esp01_set_wifi_mode(2); // 2 = AP
-    ESP01_LOG_INFO("WIFI", ">>> [CWMODE] Set : %s", esp01_get_error_string(status));
-
-    // === [CWSAP] Configuration AP ===
-    ESP01_LOG_INFO("WIFI", "\n=== [CWSAP] Configuration AP ===");
-    status = esp01_start_ap_config(ssid, password, 1, 3);
-    ESP01_LOG_INFO("WIFI", ">>> [CWSAP] Set : %s", esp01_get_error_string(status));
-
-    // === [CWSAP?] Lecture de la config AP ===
-    ESP01_LOG_INFO("WIFI", "\n=== [CWSAP?] Lecture de la config AP ===");
-    status = esp01_get_ap_config(resp, sizeof(resp));
-    ESP01_LOG_INFO("WIFI", ">>> [CWSAP?] : %s", (status == ESP01_OK) ? esp01_ap_config_to_string(resp) : esp01_get_error_string(status));
-    HAL_Delay(10000);
-
-    ESP01_LOG_INFO("WIFI", "\n=== [AP TEST] Fin du test AP ===");
-}

@@ -36,10 +36,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "freeman"                // Nom du réseau WiFi
-#define PASSWORD "manu2612@SOSSO1008" // Mot de passe du réseau WiFi
-#define LED_GPIO_PORT GPIOA           // Port GPIO de la LED
-#define LED_GPIO_PIN GPIO_PIN_5       // Pin GPIO de la LED
+#define SSID "XXXXXX"                 // Nom du réseau WiFi
+#define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -92,7 +90,7 @@ int main(void)
   MX_USART1_UART_Init();
 
   HAL_Delay(1000);
-  printf("[ESP01] === Démarrage du programme ===\r\n");
+  printf("\n[ESP01] === Démarrage du programme ===\r\n");
   HAL_Delay(500);
 
   ESP01_Status_t status;
@@ -157,8 +155,6 @@ int main(void)
   while (1)
   {
     esp01_mqtt_poll(); // Vérifie si un message est reçu et appelle le callback
-    HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
-    HAL_Delay(1000);
   }
 }
 

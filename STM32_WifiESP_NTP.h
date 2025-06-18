@@ -2,7 +2,18 @@
  ******************************************************************************
  * @file    STM32_WifiESP_NTP.h
  * @author  Weedman
- * @brief   Gestion NTP pour ESP01 sur STM32 (interface haut niveau)
+ * @version 1.2.0
+ * @date    18 juin 2025
+ * @brief   Fonctions haut niveau NTP pour ESP01 (synchronisation, parsing, affichage)
+ *
+ * @details
+ * Ce header regroupe toutes les fonctions de gestion NTP haut niveau du module ESP01 :
+ * - Configuration et synchronisation NTP (one shot ou périodique)
+ * - Parsing et affichage de la date/heure NTP
+ * - Accès à la configuration et à la dernière date reçue
+ *
+ * @note
+ * - Nécessite le driver bas niveau STM32_WifiESP.h et le module WiFi STM32_WifiESP_WIFI.h
  ******************************************************************************
  */
 
@@ -12,14 +23,15 @@
 /* ========================== INCLUDES ========================== */
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include "STM32_WifiESP.h"
 #include "STM32_WifiESP_WIFI.h"
 
 /* ========================== DEFINES ========================== */
-#define ESP01_NTP_MAX_SERVER_LEN 64
-#define ESP01_NTP_DEFAULT_SERVER "pool.ntp.org"
-#define ESP01_NTP_DEFAULT_PERIOD_S 3600
-#define ESP01_NTP_DATETIME_BUF_SIZE 64
+#define ESP01_NTP_MAX_SERVER_LEN      64      ///< Longueur max du nom de serveur NTP
+#define ESP01_NTP_DEFAULT_SERVER      "pool.ntp.org"
+#define ESP01_NTP_DEFAULT_PERIOD_S    3600    ///< Période de synchro par défaut (s)
+#define ESP01_NTP_DATETIME_BUF_SIZE   64      ///< Taille buffer date/heure NTP
 
 /* ========================== TYPES ========================== */
 /**
@@ -27,9 +39,9 @@
  */
 typedef struct
 {
-	char server[ESP01_NTP_MAX_SERVER_LEN];
-	int timezone;
-	int period_s;
+    char server[ESP01_NTP_MAX_SERVER_LEN]; ///< Nom du serveur NTP
+    int timezone;                          ///< Décalage horaire
+    int period_s;                          ///< Période de synchronisation (s)
 } esp01_ntp_config_t;
 
 /**
@@ -37,19 +49,19 @@ typedef struct
  */
 typedef struct
 {
-	int year;
-	int month;
-	int day;
-	int wday;
-	int hour;
-	int min;
-	int sec;
+    int year;   ///< Année
+    int month;  ///< Mois (1-12)
+    int day;    ///< Jour du mois
+    int wday;   ///< Jour de la semaine (0=dimanche)
+    int hour;   ///< Heure
+    int min;    ///< Minute
+    int sec;    ///< Seconde
 } ntp_datetime_fr_t;
 
-/* ========================== FONCTIONS PUBLIQUES ========================== */
+/* ======================= FONCTIONS PRINCIPALES ======================= */
 
 /**
- * @brief Configure la structure NTP locale.
+ * @brief Configure la structure NTP locale (ne modifie pas le module ESP01).
  * @param ntp_server   Nom du serveur NTP.
  * @param timezone     Décalage horaire.
  * @param sync_period_s Période de synchro en secondes.
@@ -65,17 +77,37 @@ ESP01_Status_t esp01_configure_ntp(const char *ntp_server, int timezone, int syn
 ESP01_Status_t esp01_ntp_start_sync(bool periodic);
 
 /**
- * @brief Affiche la configuration NTP courante.
+ * @brief Applique la configuration NTP au module ESP01 (commande AT).
+ * @param enable      1 pour activer NTP, 0 pour désactiver.
+ * @param timezone    Décalage horaire.
+ * @param server      Nom du serveur NTP.
+ * @param interval_s  Période de synchronisation (s).
+ * @retval ESP01_Status_t
+ */
+ESP01_Status_t esp01_apply_ntp_config(uint8_t enable, int timezone, const char *server, int interval_s);
+
+/**
+ * @brief  Récupère la date/heure NTP depuis le module ESP01 (commande AT).
+ * @param  datetime_buf Buffer de sortie.
+ * @param  bufsize      Taille du buffer.
+ * @retval ESP01_Status_t
+ */
+ESP01_Status_t esp01_get_ntp_time(char *datetime_buf, size_t bufsize);
+
+/* ======================= ACCÈS ET AFFICHAGE ======================= */
+
+/**
+ * @brief Affiche la configuration NTP courante (logs).
  */
 void esp01_print_ntp_config(void);
 
 /**
- * @brief Affiche la dernière date/heure NTP reçue en français.
+ * @brief Affiche la dernière date/heure NTP reçue en français (logs).
  */
 void esp01_ntp_print_last_datetime_fr(void);
 
 /**
- * @brief Affiche la dernière date/heure NTP reçue en anglais.
+ * @brief Affiche la dernière date/heure NTP reçue en anglais (logs).
  */
 void esp01_ntp_print_last_datetime_en(void);
 
@@ -97,6 +129,14 @@ uint8_t esp01_ntp_is_updated(void);
 void esp01_ntp_clear_updated_flag(void);
 
 /**
+ * @brief Retourne la configuration NTP courante.
+ * @return Pointeur sur la structure de config.
+ */
+const esp01_ntp_config_t *esp01_get_ntp_config(void);
+
+/* ======================= PARSING ET UTILITAIRES ======================= */
+
+/**
  * @brief Parse une date brute ESP01 en structure française.
  * @param datetime_ntp Chaîne brute.
  * @param dt Structure de sortie.
@@ -105,39 +145,15 @@ void esp01_ntp_clear_updated_flag(void);
 ESP01_Status_t esp01_parse_ntp_esp01(const char *datetime_ntp, ntp_datetime_fr_t *dt);
 
 /**
- * @brief Affiche une structure date/heure en français.
+ * @brief Affiche une structure date/heure en français (logs).
  * @param dt Structure à afficher.
  */
 void esp01_print_datetime_fr(const ntp_datetime_fr_t *dt);
 
 /**
- * @brief Affiche une structure date/heure en anglais.
+ * @brief Affiche une structure date/heure en anglais (logs).
  * @param dt Structure à afficher.
  */
 void esp01_print_datetime_en(const ntp_datetime_fr_t *dt);
-
-/**
- * @brief Retourne la configuration NTP courante.
- * @return Pointeur sur la structure de config.
- */
-const esp01_ntp_config_t *esp01_get_ntp_config(void);
-
-/**
- * @brief  Applique la configuration NTP au module ESP01 (commande AT).
- * @param  enable      1 pour activer NTP, 0 pour désactiver.
- * @param  timezone    Décalage horaire.
- * @param  server      Nom du serveur NTP.
- * @param  interval_s  Période de synchronisation (s).
- * @retval ESP01_Status_t
- */
-ESP01_Status_t esp01_apply_ntp_config(uint8_t enable, int timezone, const char *server, int interval_s);
-
-/**
- * @brief  Récupère la date/heure NTP depuis le module ESP01 (commande AT).
- * @param  datetime_buf Buffer de sortie.
- * @param  bufsize      Taille du buffer.
- * @retval ESP01_Status_t
- */
-ESP01_Status_t esp01_get_ntp_time(char *datetime_buf, size_t bufsize);
 
 #endif /* STM32_WIFIESP_NTP_H_ */

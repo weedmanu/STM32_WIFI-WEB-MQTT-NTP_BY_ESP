@@ -38,8 +38,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "freeman"				  // Nom du réseau WiFi auquel se connecter
-#define PASSWORD "manu2612@SOSSO1008" // Mot de passe du réseau WiFi
+#define SSID "XXXXXX"				  // Nom du réseau WiFi
+#define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
 #define LED_GPIO_PORT GPIOA			  // Port GPIO de la LED
 #define LED_GPIO_PIN GPIO_PIN_5		  // Pin GPIO de la LED
 /* USER CODE END PD */
@@ -559,32 +559,35 @@ int main(void)
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
 	HAL_Delay(1000);
-	printf("[ESP01] === Démarrage du programme ===\r\n");
+	printf("\n[ESP01] === Démarrage du programme ===\r\n");
 	HAL_Delay(500);
 
 	ESP01_Status_t status;
 
 	// 1. Initialisation du driver ESP01
-	printf("[ESP01] === Initialisation du driver ESP01 ===\r\n");
+	printf("\n[ESP01] === Initialisation du driver ESP01 ===\r\n");
 	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
 	printf("[ESP01] >>> Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
+	HAL_Delay(500);
 
 	// 2. Flush du buffer RX
-	printf("[ESP01] === Flush RX Buffer ===\r\n");
+	printf("\n[ESP01] === Flush RX Buffer ===\r\n");
 	status = esp01_flush_rx_buffer(500);
 	printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(100);
+	HAL_Delay(500);
 
 	// 3. test de communication AT
-	printf("[ESP01] === Test de communication AT ===\r\n");
+	printf("\n[ESP01] === Test de communication AT ===\r\n");
 	status = esp01_test_at();
 	printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+	HAL_Delay(500);
 
 	// 4. Test de version AT+GMR
-	printf("[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
+	printf("\n[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
 	char at_version[256] = {0};
 	status = esp01_get_at_version(at_version, sizeof(at_version));
 	printf("[ESP01] >>> Version ESP01 : %s\r\n", at_version);
+	HAL_Delay(500);
 
 	// 5. Connexion au réseau WiFi
 	printf("[WIFI] === Connexion au réseau WiFi ===\r\n");
@@ -598,6 +601,7 @@ int main(void)
 		NULL				 // netmask
 	);
 	printf("[WIFI] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
+	HAL_Delay(500);
 
 	// 6. Activation du mode multi-connexion ET démarrage du serveur web
 	printf("[WEB] === Activation multi-connexion + démarrage serveur web ===\r\n");
@@ -615,6 +619,7 @@ int main(void)
 	{
 		printf("[WEB] >>> Serveur web démarré sur le port 80\r\n");
 	}
+	HAL_Delay(500);
 
 	// 7. Ajout des routes HTTP
 	printf("[WEB] === Ajout des routes HTTP ===\r\n");
@@ -629,20 +634,13 @@ int main(void)
 	esp01_add_route("/testget", page_testget);
 	printf("[WEB] Ajout route /device\r\n");
 	esp01_add_route("/device", page_device);
+	HAL_Delay(500);
 
 	// 8. Vérification serveur ESP01
 	esp01_print_connection_status(); // Affiche l'état des connexions ESP01
+	HAL_Delay(500);
 
-	// 9. Affichage de l'adresse IP
-	printf("[WEB] === Serveur Web prêt ===\r\n");
-	char ip[32] = "N/A";
-	if (esp01_get_current_ip(ip, sizeof(ip)) == ESP01_OK)
-		printf("[WEB] >>> Connectez-vous à : http://%s/\r\n", ip);
-	else
-		printf("[WEB] >>> Impossible de récupérer l'adresse IP du module\r\n");
-
-	// Affichage de la configuration IP complète
-
+	// 9. Affichage de la configuration IP complète
 	char ipc[32] = "N/A", gw[32] = "N/A", mask[32] = "N/A";
 	if (esp01_get_ip_config(ipc, sizeof(ipc), gw, sizeof(gw), mask, sizeof(mask)) == ESP01_OK)
 	{
@@ -654,16 +652,25 @@ int main(void)
 	{
 		printf("[WEB] >>> Impossible de récupérer la configuration IP complète\r\n");
 	}
+	HAL_Delay(500);
+
+	// 10. Affichage de l'adresse IP
+	printf("[WEB] === Serveur Web prêt ===\r\n");
+	char ip[32] = "N/A";
+	if (esp01_get_current_ip(ip, sizeof(ip)) == ESP01_OK)
+		printf("[WEB] >>> Connectez-vous à : http://%s/\r\n", ip);
+	else
+		printf("[WEB] >>> Impossible de récupérer l'adresse IP du module\r\n");
+
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		esp01_process_requests();			  // Traite les requêtes HTTP entrantes
-		esp01_cleanup_inactive_connections(); // Nettoie les connexions inactives
-		HAL_Delay(10);						  // Délai pour éviter de surcharger le CPU
-											  /* USER CODE END WHILE */
+		esp01_http_loop(); // Gère les requêtes HTTP entrantes
+		HAL_Delay(10);	   // Délai pour éviter de surcharger le CPU
+						   /* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
 	}

@@ -1,68 +1,61 @@
 /**
  ******************************************************************************
  * @file    STM32_WifiESP_MQTT.h
- * @author  [Ton Nom ou Initiales]
+ * @author  manu
  * @version 1.1.0
- * @date    [Date de création ou de dernière modification]
+ * @date    2025
  * @brief   Bibliothèque de gestion MQTT pour le module ESP01 WiFi.
  *
  * @details
- * Ce fichier contient les définitions, structures, macros et prototypes de
- * fonctions pour gérer la communication MQTT (client) via un module ESP01
+ * Ce header regroupe toutes les définitions, structures, macros et prototypes
+ * de fonctions pour gérer la communication MQTT (client) via un module ESP01
  * connecté à un microcontrôleur STM32. Il propose des fonctions haut niveau
  * pour la connexion à un broker, la publication, la souscription, le ping,
- * et la gestion des messages MQTT.
+ * la gestion des messages MQTT et le polling.
  *
  * @note
  * - Compatible STM32CubeIDE.
  * - Nécessite la bibliothèque STM32_WifiESP.h.
- *
- * @copyright
- * La licence de ce code est libre.
  ******************************************************************************
  */
-#ifndef INC_STM32_WIFIESP_MQTT_H_
-#define INC_STM32_WIFIESP_MQTT_H_
 
-#include "STM32_WifiESP.h" // Fonctions de base ESP01
-#include "STM32_WifiESP_WIFI.h"
-#include "STM32_WifiESP_HTTP.h" // Pour compatibilité éventuelle HTTP
+#ifndef STM32_WIFIESP_MQTT_H_
+#define STM32_WIFIESP_MQTT_H_
 
-// ==================== DEFINES SPÉCIFIQUES MQTT ====================
+/* ========================== INCLUDES ========================== */
 
-#define ESP01_MQTT_MAX_TOPIC_LEN 128    ///< Taille max d'un topic MQTT
-#define ESP01_MQTT_MAX_PAYLOAD_LEN 256  ///< Taille max d'un message MQTT
-#define ESP01_MQTT_MAX_CLIENT_ID_LEN 32 ///< Taille max d'un client ID MQTT
-#define ESP01_MQTT_KEEPALIVE_DEFAULT 60 ///< Keepalive par défaut (secondes)
-#define ESP01_MQTT_QOS0 0               ///< QoS 0
-#define ESP01_MQTT_QOS1 1               ///< QoS 1
-#define ESP01_MQTT_QOS2 2               ///< QoS 2
-#define ESP01_MQTT_DEFAULT_PORT 1883    ///< Port MQTT par défaut
+#include "STM32_WifiESP.h"         // Fonctions de base ESP01
+#include "STM32_WifiESP_WIFI.h"    // Fonctions WiFi ESP01
+#include "STM32_WifiESP_HTTP.h"    // Pour compatibilité éventuelle HTTP
+#include <stdbool.h>               // Types booléens
+#include <stdint.h>                // Types entiers standard
 
-// ==================== STRUCTURES MQTT ====================
+/* =========================== DEFINES ========================== */
+
+// ----------- CONSTANTES MQTT -----------
+#define ESP01_MQTT_MAX_TOPIC_LEN      128   // Taille max d'un topic MQTT
+#define ESP01_MQTT_MAX_PAYLOAD_LEN    256   // Taille max d'un message MQTT
+#define ESP01_MQTT_MAX_CLIENT_ID_LEN  32    // Taille max d'un client ID MQTT
+#define ESP01_MQTT_KEEPALIVE_DEFAULT  60    // Keepalive par défaut (secondes)
+#define ESP01_MQTT_QOS0               0     // QoS 0
+#define ESP01_MQTT_QOS1               1     // QoS 1
+#define ESP01_MQTT_QOS2               2     // QoS 2
+#define ESP01_MQTT_DEFAULT_PORT       1883  // Port MQTT par défaut
+
+/* =========================== STRUCTURES ======================= */
 
 /**
- * @struct mqtt_client_t
- * @brief  Structure représentant un client MQTT.
- *
- * @var connected     Indique si le client est connecté au broker.
- * @var broker_ip     Adresse IP du broker MQTT.
- * @var broker_port   Port du broker MQTT.
- * @var client_id     Identifiant unique du client MQTT.
- * @var keep_alive    Intervalle keep-alive (en secondes).
- * @var packet_id     Dernier packet ID utilisé pour les messages QoS>0.
+ * @brief Structure représentant un client MQTT.
  */
 typedef struct
 {
-    bool connected;                   ///< Statut de connexion au broker
-    char broker_ip[ESP01_MAX_IP_LEN]; ///< Adresse IP du broker
-    uint16_t broker_port;             ///< Port du broker
-    char client_id[33];               ///< Identifiant client MQTT
-    uint16_t keep_alive;              ///< Intervalle keep-alive (s)
-    uint16_t packet_id;               ///< Dernier packet ID utilisé
+    bool     connected;                                 ///< Statut de connexion au broker
+    char     broker_ip[ESP01_MAX_IP_LEN];               ///< Adresse IP du broker
+    uint16_t broker_port;                               ///< Port du broker
+    char     client_id[ESP01_MQTT_MAX_CLIENT_ID_LEN+1]; ///< Identifiant client MQTT
+    uint16_t keep_alive;                                ///< Intervalle keep-alive (s)
+    uint16_t packet_id;                                 ///< Dernier packet ID utilisé
 } mqtt_client_t;
-
-extern mqtt_client_t g_mqtt_client; ///< Instance globale du client MQTT
 
 /**
  * @brief Prototype de callback pour la réception de messages MQTT.
@@ -71,7 +64,11 @@ extern mqtt_client_t g_mqtt_client; ///< Instance globale du client MQTT
  */
 typedef void (*mqtt_message_callback_t)(const char *topic, const char *message);
 
-// ==================== PROTOTYPES MQTT ====================
+/* ========================= VARIABLES GLOBALES ========================= */
+
+extern mqtt_client_t g_mqtt_client; ///< Instance globale du client MQTT
+
+/* ========================= FONCTIONS PRINCIPALES ====================== */
 
 /**
  * @brief  Connexion au broker MQTT.
@@ -128,4 +125,4 @@ void esp01_mqtt_set_message_callback(mqtt_message_callback_t cb);
  */
 void esp01_mqtt_poll(void);
 
-#endif /* INC_STM32_WIFIESP_MQTT_H_ */
+#endif /* STM32_WIFIESP_MQTT_H_ */

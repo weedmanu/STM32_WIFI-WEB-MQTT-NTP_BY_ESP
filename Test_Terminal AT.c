@@ -54,7 +54,7 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-// Pas de macro utilisateur spécifique ici
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -63,7 +63,7 @@ UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
-uint8_t esp01_dma_rx_buf[ESP01_DMA_RX_BUF_SIZE]; 		// Ajout du tampon DMA pour la réception ESP01
+uint8_t esp01_dma_rx_buf[ESP01_DMA_RX_BUF_SIZE]; // Ajout du tampon DMA pour la réception ESP01
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -140,25 +140,20 @@ int main(void)
 	printf("\r\n[ESP01] === Initialisation du driver ESP01 ===\r\n");
 	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE); // Correction ici
 	printf("[ESP01] >>> Initialisation : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(1000);
-
-	// Test de communication AT après l'init
-	printf("\r\n[ESP01] === Test AT ===\r\n");
-	status = esp01_test_at();
-	printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(500);
+	HAL_Delay(250);
 
 	// Démarre la réception IT sur la console série (UART de debug)
 	esp01_terminal_begin(&huart2);
+	HAL_Delay(250);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		esp01_console_task();
-		HAL_Delay(10);
-		/* USER CODE END WHILE */
+		esp01_console_task(); // Tâche de gestion de la console série (UART2)
+		HAL_Delay(10);		 // Petite pause CPU
+							 /* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
 	}

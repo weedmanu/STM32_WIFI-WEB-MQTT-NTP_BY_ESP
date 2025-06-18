@@ -34,12 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "freeman"                // Nom du réseau WiFi
-#define PASSWORD "manu2612@SOSSO1008" // Mot de passe du réseau WiFi
-#define LED_GPIO_PORT GPIOA           // Port GPIO de la LED
-#define LED_GPIO_PIN GPIO_PIN_5       // Pin GPIO de la LED
-#define NTP_PERIOD_S 20               // Par exemple, 10 secondes entre chaque synchro
-#define MY_DMA_RX_BUF_SIZE 8192
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -111,7 +106,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_Delay(500);
   ESP01_Status_t status;
-  char buf[512];
+  char buf[ESP01_MAX_RESP_BUF];
 
   printf("\n=== [TESTS DRIVER ESP01] Début des tests du driver STM32_WifiESP ===\n");
 
@@ -165,7 +160,7 @@ int main(void)
 
   printf("\n=== [UART] Lecture config UART\n");
   status = esp01_get_uart_config(buf, sizeof(buf));
-  char uart_str[128];
+  char uart_str[ESP01_MAX_RESP_BUF];
   if (status == ESP01_OK)
   {
     esp01_uart_config_to_string(buf, uart_str, sizeof(uart_str));
@@ -180,7 +175,7 @@ int main(void)
   printf("\n=== [SLEEP] Lecture mode sommeil\n");
   int sleep_mode = 0;
   status = esp01_get_sleep_mode(&sleep_mode);
-  char sleep_str[64];
+  char sleep_str[ESP01_MAX_RESP_BUF];
   esp01_sleep_mode_to_string(sleep_mode, sleep_str, sizeof(sleep_str));
   if (status == ESP01_OK)
   {
@@ -208,7 +203,7 @@ int main(void)
   printf("\n=== [SYSLOG] Lecture niveau log système\n");
   int syslog = 0;
   status = esp01_get_syslog(&syslog);
-  char syslog_str[32];
+  char syslog_str[ESP01_MAX_RESP_BUF];
   esp01_syslog_to_string(syslog, syslog_str, sizeof(syslog_str));
   if (status == ESP01_OK)
   {

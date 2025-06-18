@@ -37,10 +37,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "freeman"				  // Nom du réseau WiFi
-#define PASSWORD "manu2612@SOSSO1008" // Mot de passe du réseau WiFi
-#define LED_GPIO_PORT GPIOA			  // Port GPIO de la LED
-#define LED_GPIO_PIN GPIO_PIN_5		  // Pin GPIO de la LED
+#define SSID "XXXXXX"				  // Nom du réseau WiFi
+#define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
 #define NTP_PERIOD_S 20				  // Par exemple, 10 secondes entre chaque synchro
 /* USER CODE END PD */
 
@@ -112,25 +110,25 @@ int main(void)
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
 	HAL_Delay(1000);
-	printf("[ESP01] === Démarrage du programme ===\r\n");
+	printf("\n[ESP01] === Démarrage du programme ===\r\n");
 	HAL_Delay(500);
 
 	ESP01_Status_t status;
 
 	// 1. Initialisation du driver ESP01
-	printf("[ESP01] === Initialisation du driver ESP01 ===\r\n");
+	printf("\n[ESP01] === Initialisation du driver ESP01 ===\r\n");
 	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
 	printf("[ESP01] >>> Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
 	HAL_Delay(1000);
 
 	// 2. Flush du buffer RX
-	printf("[ESP01] === Flush RX Buffer ===\r\n");
+	printf("\n[ESP01] === Flush RX Buffer ===\r\n");
 	status = esp01_flush_rx_buffer(500);
 	printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
 	HAL_Delay(1000);
 
 	// 3. Test de communication AT
-	printf("[ESP01] === Test de communication AT ===\r\n");
+	printf("\n[ESP01] === Test de communication AT ===\r\n");
 	status = esp01_test_at();
 	printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
 	if (status != ESP01_OK)
@@ -141,7 +139,7 @@ int main(void)
 	HAL_Delay(1000);
 
 	// 6. Connexion au réseau WiFi
-	printf("[ESP01] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
+	printf("\n[ESP01] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
 	status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, SSID, PASSWORD, true, NULL, NULL, NULL);
 	printf("[ESP01] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
 	if (status != ESP01_OK)
@@ -194,9 +192,7 @@ int main(void)
 			printf("[NTP] >>> %s\n", fr_buf);
 			esp01_ntp_clear_updated_flag();
 		}
-
-		HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_GPIO_PIN);
-		HAL_Delay(1000);*/
+		*/
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */

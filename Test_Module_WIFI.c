@@ -31,17 +31,15 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-// Pas de typedef utilisateur spécifique ici
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "freeman"				  // Nom du réseau WiFi
-#define PASSWORD "manu2612@SOSSO1008" // Mot de passe du réseau WiFi
+#define SSID "XXXXXX"				  // Nom du réseau WiFi
+#define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
 #define SSID_AP "STM32"				  // Nom du réseau WiFi
 #define PASSWORD_AP "12345678"		  // Mot de passe du réseau WiFi
-#define LED_GPIO_PORT GPIOA			  // Port GPIO de la LED
-#define LED_GPIO_PIN GPIO_PIN_5		  // Pin GPIO de la LED
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -76,6 +74,7 @@ int __io_putchar(int ch)
 	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF); // Envoie le caractère sur UART2
 	return ch;											   // Retourne le caractère envoyé
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -113,15 +112,150 @@ int main(void)
 	/* USER CODE BEGIN 2 */
 	HAL_Delay(1000);
 	ESP01_Status_t status;
-	printf("\n=== [TESTS WIFI ESP01] Début des tests WiFi ===\n");
-	// Initialisation du driver
+	char buf[128], ip[ESP01_MAX_IP_LEN], mac[ESP01_MAX_MAC_LEN], hostname[ESP01_MAX_HOSTNAME_LEN];
+	int mode = 0, rssi = 0;
+	bool dhcp = false;
+	uint8_t found = 0;
+	esp01_network_t networks[ESP01_MAX_SCAN_NETWORKS];
+	char resp[ESP01_MAX_RESP_BUF];
+
+	printf("\n=== [TESTS DRIVER ESP01] Début des tests du module STM32_WifiESP_WIFI ===\n");
+
 	printf("\n=== [INIT] Initialisation du driver ESP01 ===\n");
 	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-	printf(">>> [INIT] %s\n", status == ESP01_OK ? "OK" : "ERREUR");
+	if (status == ESP01_OK)
+	{
+		printf(">>> [INIT] Initialisation réussie\n");
+	}
+	else
+	{
+		printf(">>> [INIT] Échec de l'initialisation\n");
+	}
+	HAL_Delay(500);
+
+	printf("\n=== [WIFI STA] Test du mode station ===\n");
+
+	// 1. Mode WiFi
+	printf("=== [CWMODE] Configuration du mode WiFi ===\n");
+	status = esp01_set_wifi_mode(ESP01_WIFI_MODE_STA);
+	printf(">>> [CWMODE] Set : %s\n", esp01_get_error_string(status));
+	HAL_Delay(500);
+
+	printf("=== [CWMODE] Lecture du mode WiFi ===\n");
+	status = esp01_get_wifi_mode(&mode);
+	printf(">>> [CWMODE] Get : %s (%d)\n", esp01_wifi_mode_to_string(mode), mode);
 	HAL_Delay(1000);
-	test_wifi_module_STA(SSID, PASSWORD);
+
+	// 2. DHCP
+	printf("=== [CWDHCP] Configuration du DHCP ===\n");
+	status = esp01_set_dhcp(true);
+	printf(">>> [CWDHCP] Set : %s\n", esp01_get_error_string(status));
+	HAL_Delay(500);
+
+	printf("=== [CWDHCP] Lecture du DHCP ===\n");
+	status = esp01_get_dhcp(&dhcp);
+	printf(">>> [CWDHCP] Get : %s\n", dhcp ? "Activé" : "Désactivé");
 	HAL_Delay(1000);
-	test_wifi_module_AP(SSID_AP, PASSWORD_AP);
+
+	// 3. Hostname
+	printf("=== [CWHOSTNAME] Configuration du hostname ===\n");
+	status = esp01_set_hostname("ESP-TEST");
+	printf(">>> [CWHOSTNAME] Set : %s\n", esp01_get_error_string(status));
+	HAL_Delay(500);
+
+	printf("=== [CWHOSTNAME] Lecture du hostname ===\n");
+	status = esp01_get_hostname(hostname, sizeof(hostname));
+	printf(">>> [CWHOSTNAME] Get : %s\n", hostname);
+	HAL_Delay(1000);
+
+	// 4. Scan réseaux
+	printf("=== [CWLAP] Scan des réseaux ===\n");
+	status = esp01_scan_networks(networks, ESP01_MAX_SCAN_NETWORKS, &found);
+	printf(">>> [CWLAP] Scan : %s (%d trouvés)\n", esp01_get_error_string(status), found);
+	if (status == ESP01_OK)
+	{
+		for (uint8_t i = 0; i < found; ++i)
+			printf("    SSID: %s, RSSI: %d, Sécu: %s\n", networks[i].ssid, networks[i].rssi, esp01_encryption_to_string(networks[i].encryption));
+	}
+	HAL_Delay(1000);
+
+	// 5. Connexion WiFi
+	printf("=== [CWJAP] Connexion WiFi ===\n");
+	status = esp01_connect_wifi(SSID, PASSWORD);
+	printf(">>> [CWJAP] Connexion : %s\n", esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	status = esp01_get_wifi_connection(resp, sizeof(resp));
+	printf(">>> [CWJAP?] Statut : %s\n", (status == ESP01_OK) ? esp01_connection_status_to_string(resp) : esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	// 5b. Etat de la connexion WiFi (CWSTATE)
+	printf("=== [CWSTATE] Etat de la connexion WiFi ===\n");
+	status = esp01_get_wifi_state(resp, sizeof(resp));
+	printf(">>> [CWSTATE] Etat : %s\n", (status == ESP01_OK) ? esp01_cwstate_to_string(resp) : esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	// 6. Adresse IP
+	printf("=== [CIFSR] Adresse IP ===\n");
+	status = esp01_get_current_ip(ip, sizeof(ip));
+	printf(">>> [CIFSR] IP : %s\n", (status == ESP01_OK) ? ip : esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	// 7. Adresse MAC
+	printf("=== [CIFSR] Adresse MAC ===\n");
+	status = esp01_get_mac(mac, sizeof(mac));
+	printf(">>> [CIFSR] MAC : %s\n", (status == ESP01_OK) ? mac : esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	// 8. RSSI
+	printf("=== [CWJAP?] RSSI ===\n");
+	status = esp01_get_rssi(&rssi);
+	if (status == ESP01_OK)
+		printf(">>> [CWJAP?] RSSI : %s\n", esp01_rf_power_to_string(rssi));
+	else
+		printf(">>> [CWJAP?] RSSI : %s\n", esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	// 9. Statut TCP/IP
+	printf("=== [CIPSTATUS] Statut TCP/IP ===\n");
+	status = esp01_get_tcp_status(buf, sizeof(buf));
+	printf(">>> [CIPSTATUS] : %s\n", (status == ESP01_OK) ? esp01_tcp_status_to_string(buf) : esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	// 10. Ping
+	printf("=== [PING] Test du ping ===\n");
+	char ping_resp[ESP01_MAX_RESP_BUF] = {0};
+	snprintf(buf, sizeof(buf), "AT+PING=\"8.8.8.8\"");
+	status = esp01_send_raw_command_dma(buf, ping_resp, sizeof(ping_resp), "OK", 5000);
+	printf(">>> [PING] : %s\n", esp01_ping_result_to_string(ping_resp));
+	HAL_Delay(1000);
+
+	// 11. Déconnexion WiFi
+	printf("=== [CWQAP] Déconnexion WiFi ===\n");
+	memset(resp, 0, sizeof(resp)); // Vide le buffer si besoin
+	status = esp01_disconnect_wifi();
+	printf(">>> [CWQAP] : %s\n", (status == ESP01_OK) ? esp01_cwqap_to_string(resp) : esp01_get_error_string(status));
+	HAL_Delay(1000);
+
+	printf("\n=== [WIFI AP] Test du mode point d'accès ===\n");
+
+	// === [CWMODE] Configuration du mode AP ===
+	printf("=== [CWMODE] Configuration du mode WiFi (AP) ===\n");
+	status = esp01_set_wifi_mode(2); // 2 = AP
+	printf(">>> [CWMODE] Set : %s\n", esp01_get_error_string(status));
+
+	// === [CWSAP] Configuration AP ===
+	printf("=== [CWSAP] Configuration AP ===\n");
+	status = esp01_start_ap_config(SSID_AP, PASSWORD_AP, 1, 3);
+	printf(">>> [CWSAP] Set : %s\n", esp01_get_error_string(status));
+
+	// === [CWSAP?] Lecture de la config AP ===
+	printf("=== [CWSAP?] Lecture de la config AP ===\n");
+	status = esp01_get_ap_config(resp, sizeof(resp));
+	printf(">>> [CWSAP?] : %s\n", (status == ESP01_OK) ? esp01_ap_config_to_string(resp) : esp01_get_error_string(status));
+	HAL_Delay(10000);
+
+	printf("=== [AP TEST] Fin du test AP ===\n");
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
