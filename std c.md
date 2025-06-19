@@ -18,7 +18,7 @@ Voici le récapitulatif complet des standards à vérifier et appliquer ou respe
 ## Documentation
 1. **Format Doxygen** pour toutes les fonctions publiques
 2. **Structure complète** : `@brief`, `@param`, `@retval`, `@details`, `@note`
-3. **Commentaires explicatifs** pour les algorithmes complexes
+3. **Commentaires explicatifs à chaque ligne et alignés** les includes, structure, fonction et accolade pour explication complète et lisible
 4. **Sections de code** avec en-têtes pour regrouper les fonctionnalités
 
 ## Gestion d'erreurs
@@ -37,7 +37,6 @@ Voici le récapitulatif complet des standards à vérifier et appliquer ou respe
 1. **Accolades toujours présentes** même pour les blocs à instruction unique
 2. **Indentation de 4 espaces** (pas de tabulations)
 3. **Nombre magique évité** : utiliser des constantes nommées
-4. **Commentaires de fin d'accolade** pour les blocs longs
 5. **Limitation de la complexité** : fonctions de taille raisonnable
 
 ## Composants spécifiques
