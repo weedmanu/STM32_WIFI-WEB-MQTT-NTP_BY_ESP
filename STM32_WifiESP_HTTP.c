@@ -17,9 +17,11 @@
  *
  * @note
  * - Compatible STM32CubeIDE.
- * - Nécessite le driver bas niveau STM32_WifiESP.
- * - Utilise la réception UART DMA circulaire pour accumuler les requêtes HTTP.
- * - Les routes HTTP sont dynamiquement ajoutables.
+ * - Nécessite la bibliothèque STM32_WifiESP.h.
+ * - Nécessite le fichier STM32_WifiESP_WIFI.h pour les fonctions WiFi.
+ *
+ * @copyright
+ * La licence de ce code est libre.
  ******************************************************************************
  */
 
@@ -44,6 +46,7 @@ volatile int g_processing_request = 0;                        // Indicateur de t
 esp01_route_t g_routes[ESP01_MAX_ROUTES] = {0};               // Tableau des routes HTTP enregistrées
 int g_route_count = 0;                                        // Nombre de routes HTTP enregistrées
 esp01_stats_t g_stats = {0};                                  // Statistiques HTTP globales
+extern uint16_t g_server_port;                                // Port du serveur HTTP
 
 // ==================== OUTILS FACTORISÉS ====================
 
@@ -78,13 +81,12 @@ static http_request_t parse_ipd_header(const char *data)
     int n = sscanf(data, "+IPD,%d,%d,\"%[^\"]\",%d:", &conn_id, &content_length, client_ip, &client_port); // Tente de parser la version longue avec IP et port
     if (n == 4)                                                                                            // Si les 4 champs sont trouvés
     {
-        req.conn_id = conn_id;                                        // Stocke l'identifiant de connexion
-        req.content_length = content_length;                          // Stocke la longueur du contenu
-        req.has_ip = true;                                            // Indique que l'IP est présente
-        strncpy(req.client_ip, client_ip, sizeof(req.client_ip) - 1); // Copie l'adresse IP
-        req.client_ip[sizeof(req.client_ip) - 1] = '\0';              // Termine la chaîne IP
-        req.client_port = client_port;                                // Stocke le port du client
-        req.is_valid = true;                                          // Indique que la structure est valide
+        req.conn_id = conn_id;                                              // Stocke l'identifiant de connexion
+        req.content_length = content_length;                                // Stocke la longueur du contenu
+        req.has_ip = true;                                                  // Indique que l'IP est présente
+        esp01_safe_strcpy(req.client_ip, sizeof(req.client_ip), client_ip); // Copie l'adresse IP
+        req.client_port = client_port;                                      // Stocke le port du client
+        req.is_valid = true;                                                // Indique que la structure est valide
     }
     else if (sscanf(data, "+IPD,%d,%d:", &conn_id, &content_length) == 2) // Sinon, tente la version courte sans IP
     {
@@ -118,16 +120,41 @@ void esp01_clear_routes(void)
  */
 ESP01_Status_t esp01_add_route(const char *path, esp01_route_handler_t handler)
 {
-    ESP01_LOG_DEBUG("HTTP", "Ajout de la route : %s", path);                       // Log l'ajout de la route
-    VALIDATE_PARAM(path && handler, ESP01_INVALID_PARAM);                          // Vérifie les paramètres
-    if (g_route_count >= ESP01_MAX_ROUTES)                                         // Vérifie qu'il reste de la place
-        ESP01_RETURN_ERROR("ADD_ROUTE", ESP01_FAIL);                               // Retourne une erreur si trop de routes
-    strncpy(g_routes[g_route_count].path, path, ESP01_MAX_HTTP_PATH_LEN - 1);      // Copie le chemin de la route
-    g_routes[g_route_count].path[ESP01_MAX_HTTP_PATH_LEN - 1] = 0;                 // Termine la chaîne
-    g_routes[g_route_count].handler = handler;                                     // Associe le handler
-    g_route_count++;                                                               // Incrémente le compteur de routes
-    ESP01_LOG_DEBUG("HTTP", "Route ajoutée : %s (total=%d)", path, g_route_count); // Log la réussite
-    return ESP01_OK;                                                               // Retourne OK
+    ESP01_LOG_DEBUG("HTTP", "Ajout de la route : %s", path);                        // Log l'ajout de la route
+    VALIDATE_PARAM(path && handler, ESP01_INVALID_PARAM);                           // Vérifie les paramètres
+    if (g_route_count >= ESP01_MAX_ROUTES)                                          // Vérifie qu'il reste de la place
+        ESP01_RETURN_ERROR("ADD_ROUTE", ESP01_FAIL);                                // Retourne une erreur si trop de routes
+    esp01_safe_strcpy(g_routes[g_route_count].path, ESP01_MAX_HTTP_PATH_LEN, path); // Copie le chemin de la route
+    g_routes[g_route_count].handler = handler;                                      // Associe le handler
+    g_route_count++;                                                                // Incrémente le compteur de routes
+    ESP01_LOG_DEBUG("HTTP", "Route ajoutée : %s (total=%d)", path, g_route_count);  // Log la réussite
+    return ESP01_OK;                                                                // Retourne OK
+}
+
+/**
+ * @brief Supprime une route HTTP enregistrée.
+ * @param path  Chemin de la route à supprimer (ex: "/status").
+ * @retval ESP01_Status_t Code de statut.
+ */
+ESP01_Status_t esp01_remove_route(const char *path)
+{
+    VALIDATE_PARAM(path, ESP01_INVALID_PARAM);                     // Vérifie le paramètre
+    ESP01_LOG_DEBUG("HTTP", "Suppression de la route : %s", path); // Log la suppression de la route
+
+    for (int i = 0; i < g_route_count; ++i) // Parcours les routes enregistrées
+    {
+        if (strcmp(g_routes[i].path, path) == 0) // Si la route correspondante est trouvée
+        {
+            // Décale les routes suivantes vers le haut
+            memmove(&g_routes[i], &g_routes[i + 1], (g_route_count - i - 1) * sizeof(esp01_route_t));
+            g_route_count--;                                                                 // Décrémente le compteur de routes
+            ESP01_LOG_DEBUG("HTTP", "Route supprimée : %s (total=%d)", path, g_route_count); // Log la réussite
+            return ESP01_OK;                                                                 // Retourne OK
+        }
+    }
+
+    ESP01_LOG_WARN("HTTP", "Route non trouvée pour suppression : %s", path); // Log un avertissement si la route n'est pas trouvée
+    return ESP01_FAIL;                                                       // Retourne une erreur
 }
 
 /**
@@ -178,6 +205,7 @@ ESP01_Status_t esp01_http_start_server(uint16_t port)
     if (st != ESP01_OK)                                                                                 // Vérifie le statut de la commande
         ESP01_RETURN_ERROR("HTTP_SERVER", st);                                                          // Retourne une erreur si échec
     ESP01_LOG_INFO("HTTP", "Serveur HTTP démarré sur le port %u", port);                                // Log la réussite
+    g_server_port = port;                                                                               // Enregistre le port du serveur dans la variable globale
     return ESP01_OK;                                                                                    // Retourne OK
 }
 
@@ -236,19 +264,21 @@ ESP01_Status_t esp01_start_server_config(bool multi_conn, uint16_t port, bool ip
  */
 ESP01_Status_t esp01_parse_http_request(const char *raw_request, http_parsed_request_t *parsed)
 {
-    ESP01_LOG_DEBUG("HTTP", "Parsing de la requête HTTP..."); // Log le début du parsing
-    VALIDATE_PARAM(raw_request, ESP01_FAIL);                  // Vérifie la validité du pointeur d'entrée
-    VALIDATE_PARAM(parsed, ESP01_FAIL);                       // Vérifie la validité du pointeur de sortie
+    ESP01_LOG_DEBUG("HTTP", "Parsing de la requête HTTP...");
+    VALIDATE_PARAM(raw_request, ESP01_INVALID_PARAM);
+    VALIDATE_PARAM(parsed, ESP01_INVALID_PARAM);
 
-    memset(parsed, 0, sizeof(http_parsed_request_t)); // Initialise la structure de sortie à zéro
+    memset(parsed, 0, sizeof(http_parsed_request_t));
 
-    const char *p = raw_request;                       // Pointeur courant dans la chaîne brute
-    const char *method_start = p, *method_end = NULL;  // Début et fin de la méthode HTTP
-    const char *path_start = NULL, *path_end = NULL;   // Début et fin du chemin
-    const char *query_start = NULL, *query_end = NULL; // Début et fin de la query string
-    const char *line_end = strstr(p, "\r\n");          // Recherche la fin de la première ligne
-    if (!line_end)                                     // Si pas de fin de ligne trouvée
-        return ESP01_FAIL;                             // Retourne une erreur
+    const char *p = raw_request;
+    const char *method_start = p, *method_end = NULL;
+    const char *path_start = NULL, *path_end = NULL;
+    const char *query_start = NULL, *query_end = NULL;
+    const char *line_end = strstr(p, "\r\n");
+    if (!line_end)
+    {
+        ESP01_RETURN_ERROR("HTTP_PARSE", ESP01_PARSE_ERROR);
+    }
 
     while (p < line_end && *p != ' ') // Avance jusqu'à l'espace après la méthode
         p++;
@@ -544,12 +574,12 @@ void esp01_process_requests(void)
         if (ipd.is_valid)                               // Si le parsing est valide
         {
             // --- MISE À JOUR DE LA CONNEXION ---
-            connection_info_t *conn = &g_connections[ipd.conn_id];                    // Récupère la structure de connexion
-            conn->conn_id = ipd.conn_id;                                              // Met à jour l'identifiant
-            conn->is_active = true;                                                   // Marque la connexion comme active
-            conn->last_activity = HAL_GetTick();                                      // Met à jour le timestamp d'activité
-            if (ipd.has_ip)                                                           // Si l'IP est présente
-                strncpy(conn->client_ip, ipd.client_ip, sizeof(conn->client_ip) - 1); // Copie l'IP
+            connection_info_t *conn = &g_connections[ipd.conn_id];                          // Récupère la structure de connexion
+            conn->conn_id = ipd.conn_id;                                                    // Met à jour l'identifiant
+            conn->is_active = true;                                                         // Marque la connexion comme active
+            conn->last_activity = HAL_GetTick();                                            // Met à jour le timestamp d'activité
+            if (ipd.has_ip)                                                                 // Si l'IP est présente
+                esp01_safe_strcpy(conn->client_ip, sizeof(conn->client_ip), ipd.client_ip); // Copie l'IP
             else
                 conn->client_ip[0] = 0;          // Vide la chaîne IP
             conn->client_port = ipd.client_port; // Met à jour le port client
@@ -645,3 +675,41 @@ void discard_http_payload(int expected_length)
         ESP01_LOG_WARN("HTTP", "discard_http_payload: %d octets non lus (discard incomplet)", remaining); // Log l'avertissement
     }
 }
+
+/**
+ * @brief  Récupère le statut du serveur HTTP
+ * @param  is_server Pointeur vers variable indiquant si le serveur est en cours d'exécution
+ * @param  port      Pointeur vers variable stockant le port du serveur
+ * @retval ESP01_Status_t ESP01_OK en cas de succès ou code d'erreur
+ * @note   Cette fonction vérifie l'état du serveur via AT+CIPSTATUS et retourne le port configuré
+ * @details
+ *         La fonction envoie AT+CIPSTATUS pour vérifier l'état des connexions.
+ *         Si "STATUS:" est trouvé dans la réponse, le serveur est considéré comme actif.
+ *         Le port est récupéré depuis la variable globale g_server_port.
+ */
+ESP01_Status_t esp01_http_get_server_status(uint8_t *is_server, uint16_t *port)
+{
+    VALIDATE_PARAM(is_server && port, ESP01_INVALID_PARAM);
+
+    char resp[ESP01_MAX_RESP_BUF] = {0};
+
+    // Vérifier l'état de la connexion
+    ESP01_Status_t st = esp01_send_raw_command_dma("AT+CIPSTATUS", resp, sizeof(resp), "OK", ESP01_TIMEOUT_SHORT);
+    if (st != ESP01_OK)
+    {
+        ESP01_RETURN_ERROR("HTTP_STATUS", st);
+    }
+
+    // Le serveur est considéré actif si nous avons un statut de connexion
+    // Cette logique peut être adaptée selon les besoins exacts
+    char *status_str = strstr(resp, "STATUS:");
+    *is_server = (status_str != NULL) ? 1 : 0;
+
+    // Récupérer le port configuré (variable globale)
+    *port = g_server_port;
+
+    ESP01_LOG_INFO("HTTP", "Statut serveur: %s (port %u)",
+                   *is_server ? "Actif" : "Inactif", *port);
+
+    return ESP01_OK;
+} // Fin de esp01_http_get_server_status

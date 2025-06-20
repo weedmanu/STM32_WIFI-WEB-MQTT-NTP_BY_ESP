@@ -1,19 +1,42 @@
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
- * @file           : NTP.c
- * @brief          : Exemple de synchronisation NTP avec STM32 et ESP01
+ * @file           : Test_Driver.c
+ * @brief          : Programme de test du driver bas niveau STM32_WifiESP
  ******************************************************************************
- * @attention
+ * @details
+ * Ce programme réalise des tests systématiques des fonctions bas niveau
+ * du driver STM32_WifiESP pour module ESP01 (ESP8266). Il teste successivement :
  *
- * Copyright (c) 2025 STMicroelectronics.
- * All rights reserved.
+ * - Initialisation du driver ESP01
+ * - Reset logiciel (AT+RST)
+ * - Restauration des paramètres usine (AT+RESTORE)
+ * - Lecture de la version du firmware (AT+GMR)
+ * - Lecture et affichage de la configuration UART (AT+UART?)
+ * - Lecture du mode sommeil (AT+SLEEP?)
+ * - Lecture de la puissance RF (AT+RFPOWER?)
+ * - Lecture du niveau de log système (AT+SYSLSG?)
+ * - Lecture de la RAM libre (AT+SYSRAM?)
+ * - Récupération de la liste complète des commandes AT
  *
- * Ce fichier contient le code utilisateur pour tester la synchronisation NTP
- * depuis un STM32 via un module ESP01. Il gère l'initialisation du WiFi,
- * la synchronisation de l'heure via NTP, l'affichage de l'heure et le clignotement d'une LED.
+ * L'objectif est de valider le bon fonctionnement de la couche de communication
+ * bas niveau entre le STM32 et le module ESP01, sans impliquer les fonctionnalités
+ * réseau (WiFi, HTTP, MQTT, etc.) qui sont testées dans d'autres programmes.
  *
- * Ce code est fourni "en l'état", sans garantie.
+ * Configuration matérielle :
+ * - UART1 : Communication avec le module ESP01
+ *   - Mode : Half-duplex
+ *   - DMA RX : Mode circulaire (buffer continu)
+ *
+ * - UART2 : Console série avec l'ordinateur
+ *   - Mode : Full-duplex
+ *   - Affichage des résultats via printf redirigé
+ *
+ * @note
+ * - Nécessite le driver STM32_WifiESP.h/.c
+ * - Compatible avec les modules ESP8266 (ESP01, ESP01S, etc.)
+ * - Baudrate par défaut: 115200 bps
+ * - Vérifiez les connexions matérielles avant exécution
  *
  ******************************************************************************
  */
@@ -104,140 +127,143 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_Delay(500);
+  HAL_Delay(1000);
   ESP01_Status_t status;
   char buf[ESP01_MAX_RESP_BUF];
 
-  printf("\n=== [TESTS DRIVER ESP01] Début des tests du driver STM32_WifiESP ===\n");
+  printf("\n[TEST][INFO] === Début des tests du driver STM32_WifiESP ===\r\n");
+  HAL_Delay(500);
 
-  printf("\n=== [INIT] Initialisation du driver ESP01 ===\n");
+  printf("\n[TEST][INFO] === Initialisation du driver ESP01 ===\r\n");
   status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-  if (status == ESP01_OK)
+  printf("[TEST][INFO] Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
+  if (status != ESP01_OK)
   {
-    printf(">>> [INIT] Initialisation réussie\n");
-  }
-  else
-  {
-    printf(">>> [INIT] Échec de l'initialisation\n");
+    printf("[TEST][ERROR] Échec de l'initialisation du driver\r\n");
+    Error_Handler();
   }
   HAL_Delay(500);
 
-  printf("\n=== [RESET] Reset logiciel (AT+RST)\n");
+  printf("\n[TEST][INFO] === Reset logiciel (AT+RST) ===\r\n");
   status = esp01_reset();
-  if (status == ESP01_OK)
+  printf("[TEST][INFO] Reset logiciel : %s\r\n", esp01_get_error_string(status));
+  if (status != ESP01_OK)
   {
-    printf(">>> [RESET] Reset logiciel réussi\n");
-  }
-  else
-  {
-    printf(">>> [RESET] Échec du reset logiciel\n");
+    printf("[TEST][ERROR] Échec du reset logiciel\r\n");
   }
   HAL_Delay(1000);
 
-  printf("\n=== [RESTORE] Restore usine (AT+RESTORE)\n");
+  printf("\n[TEST][INFO] === Restauration paramètres usine (AT+RESTORE) ===\r\n");
   status = esp01_restore();
-  if (status == ESP01_OK)
+  printf("[TEST][INFO] Restauration usine : %s\r\n", esp01_get_error_string(status));
+  if (status != ESP01_OK)
   {
-    printf(">>> [RESTORE] Restauration usine réussie\n");
-  }
-  else
-  {
-    printf(">>> [RESTORE] Échec de la restauration usine\n");
+    printf("[TEST][ERROR] Échec de la restauration usine\r\n");
   }
   HAL_Delay(1000);
 
-  printf("\n=== [GMR] Lecture version firmware\n");
-  status = esp01_get_at_version(buf, sizeof(buf));
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
+  char resp[512] = {0};
+  char *lines[5] = {NULL};
+  char lines_buffer[512] = {0};
+
+  if (esp01_get_at_version(resp, sizeof(resp)) == ESP01_OK)
   {
-    printf(">>> [GMR] Version du firmware : %s\n", buf);
+    uint8_t line_count = esp01_split_response_lines(resp, lines, 5,
+                                                    lines_buffer, sizeof(lines_buffer), true);
+
+    printf("[TEST][INFO] Version du firmware (%d lignes) :\r\n", line_count);
+    // Afficher les lignes brutes, sans préfixe
+    for (uint8_t i = 0; i < line_count; i++)
+    {
+      printf("%s\r\n", lines[i]); // Affichage des lignes sans préfixe
+    }
   }
   else
   {
-    printf(">>> [GMR] Échec de la lecture de la version du firmware\n");
+    printf("[TEST][ERROR] Échec de la lecture de version\r\n");
   }
-  HAL_Delay(500);
 
-  printf("\n=== [UART] Lecture config UART\n");
+  printf("\n[TEST][INFO] === Lecture configuration UART ===\r\n");
   status = esp01_get_uart_config(buf, sizeof(buf));
   char uart_str[ESP01_MAX_RESP_BUF];
   if (status == ESP01_OK)
   {
     esp01_uart_config_to_string(buf, uart_str, sizeof(uart_str));
-    printf(">>> [UART] Configuration UART : %s\n", uart_str);
+    printf("[TEST][INFO] Configuration UART : %s\r\n", uart_str);
   }
   else
   {
-    printf(">>> [UART] Échec de la lecture de la configuration UART\n");
+    printf("[TEST][ERROR] Échec de la lecture de configuration UART : %s\r\n", esp01_get_error_string(status));
   }
   HAL_Delay(500);
 
-  printf("\n=== [SLEEP] Lecture mode sommeil\n");
+  printf("\n[TEST][INFO] === Lecture mode sommeil ===\r\n");
   int sleep_mode = 0;
   status = esp01_get_sleep_mode(&sleep_mode);
   char sleep_str[ESP01_MAX_RESP_BUF];
   esp01_sleep_mode_to_string(sleep_mode, sleep_str, sizeof(sleep_str));
   if (status == ESP01_OK)
   {
-    printf(">>> [SLEEP] Mode sommeil : %s\n", sleep_str);
+    printf("[TEST][INFO] Mode sommeil : %s\r\n", sleep_str);
   }
   else
   {
-    printf(">>> [SLEEP] Échec de la lecture du mode sommeil\n");
+    printf("[TEST][ERROR] Échec de la lecture du mode sommeil : %s\r\n", esp01_get_error_string(status));
   }
   HAL_Delay(500);
 
-  printf("\n=== [RFPOWER] Lecture puissance RF\n");
+  printf("\n[TEST][INFO] === Lecture puissance RF ===\r\n");
   int rf_dbm = 0;
   status = esp01_get_rf_power(&rf_dbm);
   if (status == ESP01_OK)
   {
-    printf(">>> [RFPOWER] Puissance RF : %d dBm\n", rf_dbm);
+    printf("[TEST][INFO] Puissance RF : %d dBm\r\n", rf_dbm);
   }
   else
   {
-    printf(">>> [RFPOWER] Échec de la lecture de la puissance RF\n");
+    printf("[TEST][ERROR] Échec de la lecture de la puissance RF : %s\r\n", esp01_get_error_string(status));
   }
   HAL_Delay(500);
 
-  printf("\n=== [SYSLOG] Lecture niveau log système\n");
+  printf("\n[TEST][INFO] === Lecture niveau log système ===\r\n");
   int syslog = 0;
   status = esp01_get_syslog(&syslog);
   char syslog_str[ESP01_MAX_RESP_BUF];
   esp01_syslog_to_string(syslog, syslog_str, sizeof(syslog_str));
   if (status == ESP01_OK)
   {
-    printf(">>> [SYSLOG] Niveau de log : %s\n", syslog_str);
+    printf("[TEST][INFO] Niveau de log : %s\r\n", syslog_str);
   }
   else
   {
-    printf(">>> [SYSLOG] Échec de la lecture du niveau de log\n");
+    printf("[TEST][ERROR] Échec de la lecture du niveau de log : %s\r\n", esp01_get_error_string(status));
   }
   HAL_Delay(500);
 
-  printf("\n=== [SYSRAM] Lecture RAM libre\n");
+  printf("\n[TEST][INFO] === Lecture RAM libre ===\r\n");
   uint32_t free_ram = 0;
   status = esp01_get_sysram(&free_ram);
   if (status == ESP01_OK)
   {
-    printf(">>> [SYSRAM] RAM libre : %lu octets\n", free_ram);
+    printf("[TEST][INFO] RAM libre : %lu octets\r\n", free_ram);
   }
   else
   {
-    printf(">>> [SYSRAM] Échec de la lecture de la RAM libre\n");
+    printf("[TEST][ERROR] Échec de la lecture de la RAM libre : %s\r\n", esp01_get_error_string(status));
   }
   HAL_Delay(500);
 
-  printf("\n=== [CMD] Liste des commandes AT\n");
+  printf("\n[TEST][INFO] === Liste des commandes AT ===\r\n");
   char cmd_list[4096];
   status = esp01_get_cmd_list(cmd_list, sizeof(cmd_list));
   if (status == ESP01_OK)
   {
-    printf(">>> [CMD] Liste des commandes AT :\n%s\n", cmd_list);
+    printf("[TEST][INFO] Liste des commandes AT :\r\n%s\r\n", cmd_list);
   }
   else
   {
-    printf(">>> [CMD] Échec de la lecture de la liste des commandes AT\n");
+    printf("[TEST][ERROR] Échec de la lecture de la liste des commandes AT : %s\r\n", esp01_get_error_string(status));
   }
   /* USER CODE END 2 */
 

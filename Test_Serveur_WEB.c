@@ -1,20 +1,43 @@
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
- * @file           : serveur_web.c
- * @brief          : Serveur web embarqué STM32 avec ESP01 (HTTP)
+ * @file           : Test_Serveur_WEB.c
+ * @brief          : Programme de test du serveur web embarqué avec STM32 et ESP01
  ******************************************************************************
- * @attention
+ * @details
+ * Ce programme permet de tester un serveur web embarqué sur un STM32 connecté à
+ * un module ESP01. Il implémente les fonctionnalités suivantes :
  *
- * Copyright (c) 2025 STMicroelectronics.
- * All rights reserved.
+ * - Initialisation du driver ESP01 et connexion au réseau WiFi
+ * - Configuration et démarrage d'un serveur web multi-connexions sur le port 80
+ * - Gestion des routes HTTP avec plusieurs pages :
+ *   - Page d'accueil (/) : menu principal avec liens vers les autres pages
+ *   - Page LED (/led) : contrôle de la LED embarquée
+ *   - Page Test GET (/testget) : démonstration de traitement des paramètres GET
+ *   - Page Statut (/status) : statistiques et informations de connexion
+ *   - Page Device (/device) : informations système et réseau
+ * - Génération dynamique de contenu HTML/CSS responsive
+ * - Traitement des requêtes HTTP entrantes
+ * - Affichage des statistiques de connexion
  *
- * Ce fichier contient le code utilisateur pour la gestion d'un serveur web
- * embarqué sur STM32, utilisant le module ESP01 en mode WiFi.
- * Il gère l'initialisation, la configuration réseau, les routes HTTP,
- * et la génération dynamique de pages HTML.
+ * Configuration matérielle :
+ * - UART1 : Communication avec le module ESP01
+ *   - Mode : Half-duplex
+ *   - DMA RX : Mode circulaire (buffer continu)
  *
- * Ce code est fourni "en l'état", sans garantie.
+ * - UART2 : Console série avec l'ordinateur
+ *   - Mode : Full-duplex
+ *   - Affichage des résultats via printf redirigé
+ *
+ * - LED : LED embarquée sur la carte (PA5)
+ *   - Contrôlable via l'interface web (/led)
+ *
+ * @note
+ * - Nécessite les modules STM32_WifiESP, STM32_WifiESP_WIFI et STM32_WifiESP_HTTP
+ * - Compatible avec les modules ESP8266 (ESP01, ESP01S, etc.)
+ * - Baudrate par défaut: 115200 bps
+ * - Définir les constantes SSID/PASSWORD pour votre réseau WiFi
+ * - Interface web accessible à l'adresse http://[adresse_ip_module]/
  *
  ******************************************************************************
  */
@@ -38,7 +61,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "XXXXXX"				  // Nom du réseau WiFi
+#define SSID "XXXXXXXX"				  // Nom du réseau WiFi
 #define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
 #define LED_GPIO_PORT GPIOA			  // Port GPIO de la LED
 #define LED_GPIO_PIN GPIO_PIN_5		  // Pin GPIO de la LED
@@ -97,7 +120,7 @@ static void page_root(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
-	_esp_login("[HTTP][DEBUG] Entrée dans page_root (conn_id=%d)", conn_id);
+	printf("[TEST][INFO] Entrée dans page_root (conn_id=%d)\r\n", conn_id);
 
 	static const char PAGE_ROOT_TITLE[] = "Accueil STM32 Webserver";
 	static const char CSS_PAGE_ROOT_SPECIFIC[] =
@@ -128,7 +151,7 @@ static void page_root(int conn_id, const http_parsed_request_t *req)
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", BODY_PAGE_ROOT);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
-	_esp_login("[HTTP][DEBUG] Sortie de page_root, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
+	printf("[TEST][INFO] Sortie de page_root, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html)); // Envoie la page
 }
 
@@ -137,7 +160,7 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
-	_esp_login("[HTTP][DEBUG] Entrée dans page_led (conn_id=%d)", conn_id);
+	printf("[TEST][INFO] Entrée dans page_led (conn_id=%d)\r\n", conn_id);
 
 	const char PAGE_LED_TITLE[] = "LED STM32";
 	const char CSS_PAGE_LED_SPECIFIC[] =
@@ -185,7 +208,7 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
-	_esp_login("[HTTP][DEBUG] Sortie de page_led, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
+	printf("[TEST][INFO] Sortie de page_led, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
 
@@ -194,7 +217,7 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
-	_esp_login("[HTTP][DEBUG] Entrée dans page_testget (conn_id=%d)", conn_id);
+	printf("[TEST][INFO] Entrée dans page_testget (conn_id=%d)\r\n", conn_id);
 
 	const char PAGE_TESTGET_TITLE[] = "Test GET";
 	const char CSS_PAGE_TESTGET_SPECIFIC[] =
@@ -267,7 +290,7 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 	strncat(html, "<br><a class='button green' href='/'>Retour accueil</a>", sizeof(html) - strlen(html) - 1);
 	strncat(html, HTML_CARD_END_BODY_END, sizeof(html) - strlen(html) - 1);
 
-	_esp_login("[HTTP][DEBUG] Sortie de page_testget, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
+	printf("[TEST][INFO] Sortie de page_testget, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
 
@@ -276,7 +299,7 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
-	_esp_login("[HTTP][DEBUG] Entrée dans page_status (conn_id=%d)", conn_id);
+	printf("[TEST][INFO] Entrée dans page_status (conn_id=%d)\r\n", conn_id);
 
 	const char PAGE_STATUS_TITLE[] = "Statut Serveur STM32";
 	const char CSS_PAGE_STATUS_SPECIFIC[] =
@@ -362,7 +385,7 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>");
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
-	_esp_login("[HTTP][DEBUG] Sortie de page_status, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
+	printf("[TEST][INFO] Sortie de page_status, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
 
@@ -470,7 +493,7 @@ static void page_device(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
 		return;
-	_esp_login("[HTTP][DEBUG] Entrée dans page_device (conn_id=%d)", conn_id);
+	printf("[TEST][INFO] Entrée dans page_device (conn_id=%d)\r\n", conn_id);
 
 	const char PAGE_DEVICE_TITLE[] = "Infos Système & Réseau";
 	const char CSS_PAGE_DEVICE_SPECIFIC[] =
@@ -519,7 +542,7 @@ static void page_device(int conn_id, const http_parsed_request_t *req)
 	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>");
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
 
-	_esp_login("[HTTP][DEBUG] Sortie de page_device, réponse envoyée sur conn_id=%d, taille=%d", conn_id, (int)strlen(html));
+	printf("[TEST][INFO] Sortie de page_device, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
 }
 
@@ -559,38 +582,38 @@ int main(void)
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
 	HAL_Delay(1000);
-	printf("\n[ESP01] === Démarrage du programme ===\r\n");
+	printf("\n[TEST][INFO] === Démarrage du programme de test du module STM32_WifiESP_HTTP ===\r\n");
 	HAL_Delay(500);
 
 	ESP01_Status_t status;
 
 	// 1. Initialisation du driver ESP01
-	printf("\n[ESP01] === Initialisation du driver ESP01 ===\r\n");
+	printf("\n[TEST][INFO] === Initialisation du driver ESP01 ===\r\n");
 	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-	printf("[ESP01] >>> Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
+	printf("[TEST][INFO] Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
 	HAL_Delay(500);
 
 	// 2. Flush du buffer RX
-	printf("\n[ESP01] === Flush RX Buffer ===\r\n");
+	printf("\n[TEST][INFO] === Vidage du buffer RX ===\r\n");
 	status = esp01_flush_rx_buffer(500);
-	printf("[ESP01] >>> Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
+	printf("[TEST][INFO] Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
 	HAL_Delay(500);
 
 	// 3. test de communication AT
-	printf("\n[ESP01] === Test de communication AT ===\r\n");
+	printf("\n[TEST][INFO] === Test de communication AT ===\r\n");
 	status = esp01_test_at();
-	printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+	printf("[TEST][INFO] Test AT : %s\r\n", esp01_get_error_string(status));
 	HAL_Delay(500);
 
 	// 4. Test de version AT+GMR
-	printf("\n[ESP01] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
+	printf("\n[TEST][INFO] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
 	char at_version[256] = {0};
 	status = esp01_get_at_version(at_version, sizeof(at_version));
-	printf("[ESP01] >>> Version ESP01 : %s\r\n", at_version);
+	printf("[TEST][INFO] Version ESP01 : %s\r\n", at_version);
 	HAL_Delay(500);
 
 	// 5. Connexion au réseau WiFi
-	printf("[WIFI] === Connexion au réseau WiFi ===\r\n");
+	printf("\n[TEST][INFO] === Connexion au réseau WiFi ===\r\n");
 	status = esp01_connect_wifi_config(
 		ESP01_WIFI_MODE_STA, // mode
 		SSID,				 // ssid
@@ -600,11 +623,11 @@ int main(void)
 		NULL,				 // gateway
 		NULL				 // netmask
 	);
-	printf("[WIFI] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
+	printf("[TEST][INFO] Connexion WiFi : %s\r\n", esp01_get_error_string(status));
 	HAL_Delay(500);
 
 	// 6. Activation du mode multi-connexion ET démarrage du serveur web
-	printf("[WEB] === Activation multi-connexion + démarrage serveur web ===\r\n");
+	printf("\n[TEST][INFO] === Activation multi-connexion + démarrage serveur web ===\r\n");
 	ESP01_Status_t server_status = esp01_start_server_config(
 		true, // multi-connexion
 		80,	  // port
@@ -612,56 +635,58 @@ int main(void)
 	);
 	if (server_status != ESP01_OK)
 	{
-		printf("[WEB] >>> ERREUR: CIPMUX/CIPSERVER\r\n");
+		printf("[TEST][ERROR] CIPMUX/CIPSERVER : %s\r\n", esp01_get_error_string(server_status));
 		Error_Handler();
 	}
 	else
 	{
-		printf("[WEB] >>> Serveur web démarré sur le port 80\r\n");
+		printf("[TEST][INFO] Serveur web démarré sur le port 80\r\n");
 	}
 	HAL_Delay(500);
 
 	// 7. Ajout des routes HTTP
-	printf("[WEB] === Ajout des routes HTTP ===\r\n");
+	printf("\n[TEST][INFO] === Ajout des routes HTTP ===\r\n");
 	esp01_clear_routes();
-	printf("[WEB] Ajout route /\r\n");
+	printf("[TEST][INFO] Ajout route /\r\n");
 	esp01_add_route("/", page_root);
-	printf("[WEB] Ajout route /status\r\n");
+	printf("[TEST][INFO] Ajout route /status\r\n");
 	esp01_add_route("/status", page_status);
-	printf("[WEB] Ajout route /led\r\n");
+	printf("[TEST][INFO] Ajout route /led\r\n");
 	esp01_add_route("/led", page_led);
-	printf("[WEB] Ajout route /testget\r\n");
+	printf("[TEST][INFO] Ajout route /testget\r\n");
 	esp01_add_route("/testget", page_testget);
-	printf("[WEB] Ajout route /device\r\n");
+	printf("[TEST][INFO] Ajout route /device\r\n");
 	esp01_add_route("/device", page_device);
 	HAL_Delay(500);
 
 	// 8. Vérification serveur ESP01
-	esp01_print_connection_status(); // Affiche l'état des connexions ESP01
+	printf("\n[TEST][INFO] === Vérification de l'état des connexions ===\r\n");
+	esp01_print_connection_status();
 	HAL_Delay(500);
 
 	// 9. Affichage de la configuration IP complète
+	printf("\n[TEST][INFO] === Configuration IP complète ===\r\n");
 	char ipc[32] = "N/A", gw[32] = "N/A", mask[32] = "N/A";
 	if (esp01_get_ip_config(ipc, sizeof(ipc), gw, sizeof(gw), mask, sizeof(mask)) == ESP01_OK)
 	{
-		printf("[WEB] >>> IP: %s\r\n", ipc);
-		printf("[WEB] >>> Gateway: %s\r\n", gw);
-		printf("[WEB] >>> Masque: %s\r\n", mask);
+		printf("[TEST][INFO] IP: %s\r\n", ipc);
+		printf("[TEST][INFO] Gateway: %s\r\n", gw);
+		printf("[TEST][INFO] Masque: %s\r\n", mask);
 	}
 	else
 	{
-		printf("[WEB] >>> Impossible de récupérer la configuration IP complète\r\n");
+		printf("[TEST][ERROR] Impossible de récupérer la configuration IP complète\r\n");
 	}
 	HAL_Delay(500);
 
 	// 10. Affichage de l'adresse IP
-	printf("[WEB] === Serveur Web prêt ===\r\n");
+	printf("\n[TEST][INFO] === Serveur Web prêt ===\r\n");
 	char ip[32] = "N/A";
 	if (esp01_get_current_ip(ip, sizeof(ip)) == ESP01_OK)
-		printf("[WEB] >>> Connectez-vous à : http://%s/\r\n", ip);
+		printf("[TEST][INFO] Connectez-vous à : http://%s/\r\n", ip);
 	else
-		printf("[WEB] >>> Impossible de récupérer l'adresse IP du module\r\n");
-
+		printf("[TEST][ERROR] Impossible de récupérer l'adresse IP du module\r\n");
+	printf("[TEST][INFO] Démarrage de la boucle principale\r\n");
 	/* USER CODE END 2 */
 
 	/* Infinite loop */

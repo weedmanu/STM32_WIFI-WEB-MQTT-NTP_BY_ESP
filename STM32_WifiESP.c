@@ -19,23 +19,24 @@
  * - Nécessite la configuration de 2 UART (ESP01 + debug/console).
  * - Utilise la réception DMA circulaire pour l’ESP01 et IT pour la console.
  * - Toutes les fonctions sont utilisables sans connexion WiFi.
+ *
  ******************************************************************************
  */
 
-#include "STM32_WifiESP.h"                    // Header du driver ESP01
-#include <stdlib.h>                           // Pour malloc, free
-#include <stdarg.h>                           // Pour va_list, va_start, va_end
-#include <string.h>                           // Pour memcpy, strlen, strstr
-#include <stdio.h>                            // Pour snprintf, vsnprintf
+#include "STM32_WifiESP.h" // Header du driver ESP01
+#include <stdlib.h>        // Pour malloc, free
+#include <stdarg.h>        // Pour va_list, va_start, va_end
+#include <string.h>        // Pour memcpy, strlen, strstr
+#include <stdio.h>         // Pour snprintf, vsnprintf
 
 // ==================== VARIABLES GLOBALES ====================
 
-UART_HandleTypeDef *g_esp_uart = NULL;        // UART pour communication avec l'ESP01
-UART_HandleTypeDef *g_debug_uart = NULL;      // UART pour debug/console AT
-uint8_t *g_dma_rx_buf = NULL;                 // Buffer DMA pour réception UART
-uint16_t g_dma_buf_size = 0;                  // Taille du buffer DMA RX
-volatile uint16_t g_rx_last_pos = 0;          // Dernière position lue dans le buffer DMA RX
-uint16_t g_server_port = 80;                  // Port par défaut du serveur HTTP
+UART_HandleTypeDef *g_esp_uart = NULL;   // UART pour communication avec l'ESP01
+UART_HandleTypeDef *g_debug_uart = NULL; // UART pour debug/console AT
+uint8_t *g_dma_rx_buf = NULL;            // Buffer DMA pour réception UART
+uint16_t g_dma_buf_size = 0;             // Taille du buffer DMA RX
+volatile uint16_t g_rx_last_pos = 0;     // Dernière position lue dans le buffer DMA RX
+uint16_t g_server_port = 80;             // Port par défaut du serveur HTTP
 
 // === Variables terminal AT ===
 volatile uint8_t esp_console_rx_flag = 0;                   // Indicateur de réception d'un caractère dans le terminal AT
@@ -47,23 +48,24 @@ volatile uint8_t esp_console_cmd_ready = 0;                 // Indique si une co
 // ==================== LOGS & DEBUG ====================
 
 /**
- * @brief  Log interne formaté sur l'UART de debug.
- * @param  fmt  Format printf.
- * @param  ...  Arguments variables.
+ * @brief  Log une information de debug sur l'UART de debug.
+ * @param  fmt Format de la chaîne de log.
+ * @param  ... Arguments formatés.
  */
 void _esp_login(const char *fmt, ...)
 {
-#if ESP01_DEBUG              // Si le debug est activé
-    if (g_debug_uart && fmt) // Si l'UART de debug est initialisée et le format n'est pas NULL
+#if ESP01_DEBUG
+    VALIDATE_PARAM_VOID(fmt); // Correction : macro dédiée pour void
+    if (g_debug_uart)
     {
-        char buf[ESP01_MAX_CMD_BUF];                                                 // Buffer pour le message formaté
-        va_list args;                                                                // Liste d'arguments variable pour le format printf
-        va_start(args, fmt);                                                         // Initialisation de la liste d'arguments
-        vsnprintf(buf, sizeof(buf), fmt, args);                                      // Formatage du message dans le buffer
-        va_end(args);                                                                // Fin de la liste d'arguments
-        HAL_UART_Transmit(g_debug_uart, (uint8_t *)buf, strlen(buf), HAL_MAX_DELAY); // Envoi du message formaté sur l'UART de debug
-        const char crlf[] = "\r\n";                                                  // Caractères de fin de ligne
-        HAL_UART_Transmit(g_debug_uart, (uint8_t *)crlf, 2, HAL_MAX_DELAY);          // Envoi des caractères de fin de ligne
+        char buf[ESP01_MAX_CMD_BUF];
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        HAL_UART_Transmit(g_debug_uart, (uint8_t *)buf, strlen(buf), HAL_MAX_DELAY);
+        const char crlf[] = "\r\n";
+        HAL_UART_Transmit(g_debug_uart, (uint8_t *)crlf, 2, HAL_MAX_DELAY);
     }
 #endif
 }
@@ -80,7 +82,7 @@ void _esp_login(const char *fmt, ...)
  */
 ESP01_Status_t esp01_init(UART_HandleTypeDef *huart_esp, UART_HandleTypeDef *huart_debug, uint8_t *dma_rx_buf, uint16_t dma_buf_size)
 {
-    VALIDATE_PARAM(huart_esp && huart_debug && dma_rx_buf && dma_buf_size > 0, ESP01_INVALID_PARAM); // Validation des paramètres d'entrée
+    VALIDATE_PARAM(huart_esp && huart_debug && dma_rx_buf && dma_buf_size > 0, ESP01_INVALID_PARAM);
 
     g_esp_uart = huart_esp;        // Initialise l'UART pour l'ESP01
     g_debug_uart = huart_debug;    // Initialise l'UART pour le debug/console
@@ -90,8 +92,8 @@ ESP01_Status_t esp01_init(UART_HandleTypeDef *huart_esp, UART_HandleTypeDef *hua
 
     if (HAL_UART_Receive_DMA(g_esp_uart, g_dma_rx_buf, g_dma_buf_size) != HAL_OK) // Initialise la réception DMA pour l'ESP01
     {
-        ESP01_LOG_ERROR("INIT", "Erreur initialisation DMA RX : %s", esp01_get_error_string(ESP01_FAIL)); // Log l'erreur si l'initialisation échoue
-        return ESP01_NOT_INITIALIZED;                                                                     // Retourne une erreur si l'initialisation échoue
+        ESP01_LOG_ERROR("INIT", "Erreur initialisation DMA RX : %s", esp01_get_error_string(ESP01_FAIL));
+        ESP01_RETURN_ERROR("INIT", ESP01_NOT_INITIALIZED); // Utilisation de RETURN_ERROR au lieu de return
     }
     HAL_Delay(250); // Petit délai pour laisser l'ESP01 démarrer
 
@@ -99,7 +101,7 @@ ESP01_Status_t esp01_init(UART_HandleTypeDef *huart_esp, UART_HandleTypeDef *hua
     if (status != ESP01_OK)                  // Si le test AT échoue
     {
         ESP01_LOG_ERROR("INIT", "ESP01 non détecté !"); // Log l'erreur
-        return ESP01_NOT_DETECTED;                      // Retourne une erreur si l'ESP01 n'est pas détecté
+        ESP01_RETURN_ERROR("INIT", ESP01_NOT_DETECTED); // Utilisation de RETURN_ERROR au lieu de return
     }
     return ESP01_OK; // Retourne OK si l'initialisation réussit
 }
@@ -252,32 +254,33 @@ ESP01_Status_t esp01_flush_rx_buffer(uint32_t timeout_ms)
  */
 int esp01_get_new_data(uint8_t *buf, uint16_t bufsize)
 {
-    if (!g_dma_rx_buf || !buf || bufsize == 0) // Validation des paramètres d'entrée
-        return 0;                              // Retourne 0 si paramètres invalides
+    VALIDATE_PARAM(buf && bufsize > 0, 0); // Ajout de la validation des paramètres
+    if (!g_dma_rx_buf)
+        return 0;
 
-    uint16_t pos = g_dma_buf_size - __HAL_DMA_GET_COUNTER(g_esp_uart->hdmarx); // Calcule la position courante du DMA
-    int len = 0;                                                               // Nombre d'octets à lire
+    uint16_t pos = g_dma_buf_size - __HAL_DMA_GET_COUNTER(g_esp_uart->hdmarx);
+    int len = 0;
 
-    if (pos != g_rx_last_pos) // Si de nouvelles données sont arrivées
+    if (pos != g_rx_last_pos)
     {
-        if (pos > g_rx_last_pos) // Cas normal (pas de retour en début de buffer)
+        if (pos > g_rx_last_pos)
         {
-            len = pos - g_rx_last_pos;                      // Nombre d'octets à lire
-            memcpy(buf, &g_dma_rx_buf[g_rx_last_pos], len); // Copie les nouveaux octets dans le buffer de sortie
+            len = pos - g_rx_last_pos;
+            memcpy(buf, &g_dma_rx_buf[g_rx_last_pos], len);
         }
-        else // Cas où le DMA a bouclé (retour au début du buffer)
+        else
         {
-            len = g_dma_buf_size - g_rx_last_pos;           // Partie jusqu'à la fin du buffer
-            memcpy(buf, &g_dma_rx_buf[g_rx_last_pos], len); // Copie la fin du buffer
-            if (pos > 0)                                    // S'il y a aussi des données au début du buffer
+            len = g_dma_buf_size - g_rx_last_pos;
+            memcpy(buf, &g_dma_rx_buf[g_rx_last_pos], len);
+            if (pos > 0)
             {
-                memcpy(buf + len, &g_dma_rx_buf[0], pos); // Copie la partie depuis le début du buffer
-                len += pos;                               // Met à jour la longueur totale lue
+                memcpy(buf + len, &g_dma_rx_buf[0], pos);
+                len += pos;
             }
         }
-        g_rx_last_pos = pos; // Met à jour la dernière position lue
+        g_rx_last_pos = pos;
     }
-    return len; // Retourne le nombre d'octets lus
+    return len;
 }
 
 /**
@@ -286,24 +289,27 @@ int esp01_get_new_data(uint8_t *buf, uint16_t bufsize)
  */
 void _flush_rx_buffer(uint32_t timeout_ms)
 {
-    uint32_t start = HAL_GetTick();              // Sauvegarde le temps de départ
-    uint8_t dummy[ESP01_SMALL_BUF_SIZE];         // Buffer temporaire pour lecture
-    while ((HAL_GetTick() - start) < timeout_ms) // Boucle jusqu'à expiration du timeout
+    // Pas de paramètre à valider ici (timeout_ms peut être 0)
+    uint32_t start = HAL_GetTick();
+    uint8_t dummy[ESP01_SMALL_BUF_SIZE];
+    while ((HAL_GetTick() - start) < timeout_ms)
     {
-        int len = esp01_get_new_data(dummy, sizeof(dummy)); // Lit les nouvelles données reçues
-        if (len == 0)                                       // Si rien à lire, attend un peu
-            HAL_Delay(1);                                   // Petite pause CPU
+        int len = esp01_get_new_data(dummy, sizeof(dummy));
+        if (len == 0)
+            HAL_Delay(1);
     }
-    ESP01_LOG_DEBUG("FLUSH", "Buffer RX vidé (utilitaire)"); // Log de fin de flush RX
+    ESP01_LOG_DEBUG("FLUSH", "Buffer RX vidé (utilitaire)");
 }
 
 // ==================== VERSION & INFOS ====================
 
 /**
- * @brief  Récupère la version AT du module ESP01.
- * @param  version_buf Buffer de sortie pour la version.
- * @param  buf_size    Taille du buffer.
- * @retval ESP01_Status_t Code de statut.
+ * @brief  Récupère la version du firmware AT de l'ESP01
+ * @param  version_buf Buffer pour stocker la réponse complète de AT+GMR
+ * @param  buf_size    Taille du buffer
+ * @retval ESP01_Status_t ESP01_OK en cas de succès, code d'erreur sinon
+ * @note   Cette fonction retourne la réponse brute de AT+GMR qui contient
+ *         généralement plusieurs lignes d'information sur le firmware
  */
 ESP01_Status_t esp01_get_at_version(char *version_buf, size_t buf_size)
 {
@@ -314,14 +320,78 @@ ESP01_Status_t esp01_get_at_version(char *version_buf, size_t buf_size)
 
     if (st != ESP01_OK)
     {
-        ESP01_LOG_ERROR("GMR", "Erreur : %s", esp01_get_error_string(st));
-        return ESP01_FAIL;
+        ESP01_LOG_ERROR("GMR", "Erreur récupération version : %s", esp01_get_error_string(st));
+        esp01_safe_strcpy(version_buf, buf_size, "Erreur récupération version");
+        return st;
     }
 
-    // Utilisation du helper pour parser la version
-    char version_only[ESP01_MAX_RESP_BUF] = {0};
-    esp01_parse_gmr_version(resp, version_only, sizeof(version_only));
-    return esp01_safe_strcpy(version_buf, buf_size, version_only);
+    // Copier la réponse brute AT+GMR directement
+    esp01_safe_strcpy(version_buf, buf_size, resp);
+
+    ESP01_LOG_DEBUG("GMR", "Version AT récupérée (%d octets)", (int)strlen(version_buf));
+    return ESP01_OK;
+}
+
+/**
+ * @brief  Extrait et affiche les lignes d'informations du firmware ESP01
+ * @param  gmr_resp Réponse brute de la commande AT+GMR
+ * @return Nombre de lignes extraites
+ */
+uint8_t esp01_display_firmware_info(const char *gmr_resp)
+{
+    if (!gmr_resp || !*gmr_resp)
+        return 0;
+
+    // Trouver le début des informations (après "AT+GMR")
+    const char *start = strstr(gmr_resp, "AT+GMR");
+    if (start)
+        start += 6; // Passer "AT+GMR"
+    else
+        start = gmr_resp; // Si "AT+GMR" n'est pas trouvé, utiliser le début
+
+    // Ignorer les lignes vides au début
+    while (*start && (*start == '\r' || *start == '\n'))
+        start++;
+
+    // Compter le nombre de lignes et les afficher
+    uint8_t line_count = 0;
+    char line_buf[128];
+    const char *line_start = start;
+
+    while (*line_start)
+    {
+        const char *line_end = strstr(line_start, "\r\n");
+        if (!line_end)
+            break;
+
+        size_t line_len = line_end - line_start;
+        if (line_len > 0 && line_len < sizeof(line_buf) - 1)
+        {
+            memcpy(line_buf, line_start, line_len);
+            line_buf[line_len] = '\0';
+
+            // Afficher seulement si la ligne n'est pas vide et ne contient pas que des espaces
+            bool empty = true;
+            for (size_t i = 0; i < line_len; i++)
+            {
+                if (!isspace((unsigned char)line_buf[i]))
+                {
+                    empty = false;
+                    break;
+                }
+            }
+
+            if (!empty)
+            {
+                ESP01_LOG_INFO("GMR", "%s", line_buf);
+                line_count++;
+            }
+        }
+
+        line_start = line_end + 2; // Passer au-delà de \r\n
+    }
+
+    return line_count;
 }
 
 /**
@@ -663,31 +733,71 @@ const char *esp01_get_error_string(ESP01_Status_t status)
     switch (status)
     {
     case ESP01_OK:
-        return "OK"; // Code OK
+        return "OK";
     case ESP01_FAIL:
-        return "Erreur"; // Code erreur générique
+        return "Erreur";
     case ESP01_TIMEOUT:
-        return "Timeout"; // Timeout
+        return "Timeout";
     case ESP01_NOT_INITIALIZED:
-        return "Non initialisé"; // Non initialisé
+        return "Non initialisé";
     case ESP01_INVALID_PARAM:
-        return "Paramètre invalide"; // Paramètre invalide
+        return "Paramètre invalide";
     case ESP01_BUFFER_OVERFLOW:
-        return "Débordement buffer"; // Débordement de buffer
-    case ESP01_WIFI_NOT_CONNECTED:
-        return "WiFi non connecté"; // Non connecté WiFi
-    case ESP01_HTTP_PARSE_ERROR:
-        return "Erreur parsing HTTP"; // Erreur parsing HTTP
-    case ESP01_ROUTE_NOT_FOUND:
-        return "Route HTTP non trouvée"; // Route non trouvée
-    case ESP01_CONNECTION_ERROR:
-        return "Erreur connexion"; // Erreur de connexion
+        return "Débordement buffer";
+    case ESP01_UNEXPECTED_RESPONSE:
+        return "Réponse inattendue";
+    case ESP01_NOT_DETECTED:
+        return "Module non détecté";
+    case ESP01_CMD_TOO_LONG:
+        return "Commande trop longue";
     case ESP01_MEMORY_ERROR:
-        return "Erreur mémoire"; // Erreur mémoire
+        return "Erreur mémoire";
     case ESP01_EXIT:
-        return "Sortie"; // Sortie
+        return "Sortie";
+    case ESP01_NOT_CONNECTED:
+        return "Non connecté";
+    case ESP01_ALREADY_CONNECTED:
+        return "Déjà connecté";
+    case ESP01_CONNECTION_ERROR:
+        return "Erreur connexion";
+    case ESP01_ROUTE_NOT_FOUND:
+        return "Route non trouvée";
+    case ESP01_PARSE_ERROR:
+        return "Erreur de parsing";
+    case ESP01_WIFI_NOT_CONNECTED:
+        return "WiFi non connecté";
+    case ESP01_WIFI_TIMEOUT:
+        return "Timeout WiFi";
+    case ESP01_WIFI_WRONG_PASSWORD:
+        return "Mot de passe WiFi incorrect";
+    case ESP01_WIFI_AP_NOT_FOUND:
+        return "Point d'accès introuvable";
+    case ESP01_WIFI_CONNECT_FAIL:
+        return "Échec connexion WiFi";
+    case ESP01_HTTP_PARSE_ERROR:
+        return "Erreur parsing HTTP";
+    case ESP01_HTTP_INVALID_REQUEST:
+        return "Requête HTTP invalide";
+    case ESP01_HTTP_TIMEOUT:
+        return "Timeout HTTP";
+    case ESP01_HTTP_CONNECTION_REFUSED:
+        return "Connexion HTTP refusée";
+    case ESP01_MQTT_NOT_CONNECTED:
+        return "MQTT non connecté";
+    case ESP01_MQTT_PROTOCOL_ERROR:
+        return "Erreur protocole MQTT";
+    case ESP01_MQTT_SUBSCRIPTION_FAILED:
+        return "Échec abonnement MQTT";
+    case ESP01_MQTT_PUBLISH_FAILED:
+        return "Échec publication MQTT";
+    case ESP01_NTP_SYNC_ERROR:
+        return "Erreur synchronisation NTP";
+    case ESP01_NTP_INVALID_RESPONSE:
+        return "Réponse NTP invalide";
+    case ESP01_NTP_SERVER_NOT_REACHABLE:
+        return "Serveur NTP inaccessible";
     default:
-        return "Code inconnu"; // Code inconnu
+        return "Code inconnu";
     }
 }
 
@@ -871,7 +981,6 @@ ESP01_Status_t esp01_syslog_to_string(int syslog, char *out, size_t out_size)
 ESP01_Status_t esp01_parse_int_after(const char *resp, const char *pattern, int32_t *out)
 {
     VALIDATE_PARAM(resp && pattern && out, ESP01_INVALID_PARAM);
-
     char *ptr = strstr(resp, pattern); // Cherche le motif dans la réponse
     if (!ptr)
         ESP01_RETURN_ERROR("PARSE_INT", ESP01_FAIL);
@@ -894,21 +1003,30 @@ ESP01_Status_t esp01_parse_string_after(const char *resp, const char *pattern, c
 {
     VALIDATE_PARAM(resp && pattern && out && out_size > 0, ESP01_INVALID_PARAM);
 
-    char *ptr = strstr(resp, pattern); // Cherche le motif dans la réponse
-    if (!ptr)
+    char *start = strstr(resp, pattern); // Cherche le motif dans la réponse
+    if (!start)
         ESP01_RETURN_ERROR("PARSE_STR", ESP01_FAIL);
-    ptr = strchr(ptr, ':'); // Cherche le caractère ':'
-    if (!ptr)
+    start = strchr(start, ':'); // Cherche le caractère ':'
+    if (!start)
         ESP01_RETURN_ERROR("PARSE_STR", ESP01_FAIL);
-    ptr++;
+    start++;
 
     size_t len = 0;
-    while (ptr[len] && ptr[len] != '\r' && ptr[len] != '\n' && len < out_size - 1)
+    while (start[len] && start[len] != '\r' && start[len] != '\n' && len < out_size - 1)
         len++;
     if (esp01_check_buffer_size(len, out_size - 1) != ESP01_OK)
         ESP01_RETURN_ERROR("PARSE_STR", ESP01_BUFFER_OVERFLOW);
-    strncpy(out, ptr, len);
-    out[len] = '\0';
+    // strncpy(out, ptr, len);
+    // out[len] = '\0';
+    if (len < out_size)
+    {
+        memcpy(out, start, len);
+        out[len] = '\0';
+    }
+    else
+    {
+        out[0] = '\0';
+    }
     return ESP01_OK;
 }
 
@@ -922,7 +1040,7 @@ ESP01_Status_t esp01_parse_string_after(const char *resp, const char *pattern, c
  */
 bool esp01_extract_quoted_value(const char *src, const char *motif, char *out, size_t out_len)
 {
-    VALIDATE_PARAM(src && motif && out && out_len > 0, false); // Vérifie les paramètres
+    VALIDATE_PARAM(src && motif && out && out_len > 0, false);
 
     const char *p = strstr(src, motif); // Cherche le motif dans la réponse
     if (!p)
@@ -931,10 +1049,18 @@ bool esp01_extract_quoted_value(const char *src, const char *motif, char *out, s
     const char *q = strchr(p, '"'); // Cherche le guillemet fermant
     size_t len = q ? (size_t)(q - p) : 0;
     if (!q || esp01_check_buffer_size(len, out_len - 1) != ESP01_OK)
-        return false;     // Retourne false si pas de guillemet ou buffer trop petit
-    strncpy(out, p, len); // Copie la chaîne extraite
-    out[len] = 0;         // Termine la chaîne
-    return true;          // Succès
+        return false;  // Retourne false si pas de guillemet ou buffer trop petit
+    if (len < out_len) // Si la longueur est inférieure à la taille du buffer
+    {
+        memcpy(out, p, len); // Copie la chaîne trouvée dans le buffer de sortie
+        out[len] = 0;        // Termine la chaîne par un caractère nul
+    }
+    else // Si la longueur est égale ou supérieure à la taille du buffer
+    {
+        // esp01_safe_strcpy(out, out_len, p); // (inutile ici car p n'est pas terminée)
+        out[0] = 0;
+    }
+    return true; // Retourne true si la chaîne a été extraite avec succès
 }
 
 /**
@@ -946,8 +1072,7 @@ bool esp01_extract_quoted_value(const char *src, const char *motif, char *out, s
  */
 ESP01_Status_t esp01_parse_bool_after(const char *resp, const char *tag, bool *out)
 {
-    if (!resp || !tag || !out)
-        return ESP01_INVALID_PARAM;
+    VALIDATE_PARAM(resp && tag && out, ESP01_INVALID_PARAM);
 
     const char *ptr = strstr(resp, tag);
     if (!ptr)
@@ -980,37 +1105,6 @@ ESP01_Status_t esp01_parse_bool_after(const char *resp, const char *tag, bool *o
     return ESP01_FAIL;
 }
 
-/**
- * @brief  Parse la version GMR à partir du buffer de réponse.
- * @param  gmr_buf      Buffer de réponse AT+GMR.
- * @param  version_buf  Buffer de sortie.
- * @param  version_buf_size Taille du buffer de sortie.
- */
-void esp01_parse_gmr_version(const char *gmr_buf, char *version_buf, size_t version_buf_size)
-{
-    version_buf[0] = '\0';
-    const char *lines[GMR_VERSION_LINES] = {"AT version:", "SDK version:", "Bin version:"};
-    for (int i = 0; i < GMR_VERSION_LINES; ++i)
-    {
-        const char *start = strstr(gmr_buf, lines[i]);
-        if (start)
-        {
-            const char *end = strchr(start, '\n');
-            size_t len = end ? (size_t)(end - start) : strlen(start);
-            if (strlen(version_buf) + len + 2 < version_buf_size)
-            {
-                strncat(version_buf, start, len);
-                size_t curr_len = strlen(version_buf);
-                if (curr_len + 1 < version_buf_size)
-                {
-                    version_buf[curr_len] = '\n';
-                    version_buf[curr_len + 1] = '\0';
-                }
-            }
-        }
-    }
-}
-
 // ==================== TERMINAL AT (CONSOLE) ====================
 
 /**
@@ -1019,9 +1113,8 @@ void esp01_parse_gmr_version(const char *gmr_buf, char *version_buf, size_t vers
  */
 void esp01_terminal_begin(UART_HandleTypeDef *huart_debug)
 {
+    VALIDATE_PARAM_VOID(huart_debug); // Correction : macro dédiée pour void
     g_debug_uart = huart_debug;
-
-    // Activation des interruptions RX pour l'UART de debug
     HAL_UART_Receive_IT(g_debug_uart, (uint8_t *)&esp_console_rx_char, 1);
 }
 
@@ -1031,18 +1124,23 @@ void esp01_terminal_begin(UART_HandleTypeDef *huart_debug)
  */
 void esp01_console_rx_callback(UART_HandleTypeDef *huart)
 {
-    if (huart == g_debug_uart) {                                                      // Vérifie si c'est bien l'UART de debug
-        char c = esp_console_rx_char;                                                 // Récupère le caractère reçu
-        if (!esp_console_cmd_ready && esp_console_cmd_idx < ESP01_MAX_CMD_BUF - 1) {  // Si pas de commande prête et espace disponible dans le buffer
-            if (c == '\r' || c == '\n') {                                            // Si retour chariot ou saut de ligne (fin de commande)
-                esp_console_cmd_buf[esp_console_cmd_idx] = '\0';                      // Termine la chaîne de commande par un caractère nul
-                esp_console_cmd_ready = 1;                                            // Indique que la commande est prête à être traitée
+    VALIDATE_PARAM_VOID(huart); // Correction : macro dédiée pour void
+    if (huart == g_debug_uart)
+    {
+        char c = esp_console_rx_char;
+        if (!esp_console_cmd_ready && esp_console_cmd_idx < ESP01_MAX_CMD_BUF - 1)
+        {
+            if (c == '\r' || c == '\n')
+            {
+                esp_console_cmd_buf[esp_console_cmd_idx] = '\0';
+                esp_console_cmd_ready = 1;
             }
-            else if (c >= 32 && c <= 126) {                                          // Si caractère imprimable (ASCII)
-                esp_console_cmd_buf[esp_console_cmd_idx++] = c;                       // Ajoute le caractère au buffer de commande et incrémente l'index
+            else if (c >= 32 && c <= 126)
+            {
+                esp_console_cmd_buf[esp_console_cmd_idx++] = c;
             }
         }
-        HAL_UART_Receive_IT(g_debug_uart, (uint8_t *)&esp_console_rx_char, 1);        // Relance la réception d'un caractère en interruption sur l'UART de debug
+        HAL_UART_Receive_IT(g_debug_uart, (uint8_t *)&esp_console_rx_char, 1);
     }
 }
 
@@ -1054,6 +1152,8 @@ void esp01_console_rx_callback(UART_HandleTypeDef *huart)
  */
 static ESP01_Status_t esp01_interactive_at_console(char *out_buf, size_t out_buf_size)
 {
+    VALIDATE_PARAM(out_buf && out_buf_size > 0, ESP01_INVALID_PARAM);
+
     esp01_flush_rx_buffer(10); // Vide le buffer RX avant d'envoyer
 
     if (!esp_console_cmd_ready || esp_console_cmd_idx == 0)
@@ -1088,9 +1188,9 @@ static ESP01_Status_t esp01_interactive_at_console(char *out_buf, size_t out_buf
  */
 void esp01_console_task(void)
 {
-    static uint8_t prompt_affiche = 0; // Indique si le prompt a été affiché
+    // Pas de paramètre à valider ici
+    static uint8_t prompt_affiche = 0;
 
-    // Affiche le prompt si aucune commande prête à être envoyée
     if (!prompt_affiche && esp_console_cmd_ready == 0)
     {
         printf("\r\n[ESP01] === Entrez une commande AT : ");
@@ -1098,14 +1198,12 @@ void esp01_console_task(void)
         prompt_affiche = 1;
     }
 
-    // Si une commande AT a été saisie, l'envoie à l'ESP01 et affiche la réponse
     if (esp_console_cmd_ready)
     {
-        char reponse[ESP01_LARGE_RESP_BUF];                     // Buffer pour la réponse
-        esp01_interactive_at_console(reponse, sizeof(reponse)); // Envoie la commande et récupère la réponse
+        char reponse[ESP01_LARGE_RESP_BUF];
+        esp01_interactive_at_console(reponse, sizeof(reponse));
         printf("[ESP01] >>> %s", reponse);
 
-        // Si la commande était un reset ou un restore, attendre le reboot du module
         if (
             strstr((char *)esp_console_cmd_buf, "AT+RST") ||
             strstr((char *)esp_console_cmd_buf, "AT+RESTORE"))
@@ -1113,7 +1211,7 @@ void esp01_console_task(void)
             printf("\r\n[ESP01] >>> Attente du redémarrage du module...\r\n");
             char boot_msg[ESP01_MAX_RESP_BUF] = {0};
             uint32_t start = HAL_GetTick();
-            while ((HAL_GetTick() - start) < 8000) // Timeout 8 secondes
+            while ((HAL_GetTick() - start) < 8000)
             {
                 int len = esp01_get_new_data((uint8_t *)boot_msg, sizeof(boot_msg) - 1);
                 if (len > 0)
@@ -1129,8 +1227,31 @@ void esp01_console_task(void)
             }
         }
 
-        esp_console_cmd_ready = 0; // Réinitialise l'état de la commande
-        esp_console_cmd_idx = 0;   // Réinitialise l'index
-        prompt_affiche = 0;        // Réinitialise le prompt
+        esp_console_cmd_ready = 0;
+        esp_console_cmd_idx = 0;
+        prompt_affiche = 0;
     }
+}
+
+/**
+ * @brief  (Interne) Supprime les espaces/retours en début et fin de chaîne.
+ * @param  str  Chaîne à nettoyer.
+ */
+void _esp_trim_string(char *str)
+{
+    VALIDATE_PARAM_VOID(str);
+
+    // Supprime les espaces au début
+    char *start = str;
+    while (*start && (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n'))
+        start++;
+
+    // Si des espaces ont été trouvés au début, décaler la chaîne
+    if (start != str)
+        memmove(str, start, strlen(start) + 1);
+
+    // Supprime les espaces à la fin
+    char *end = str + strlen(str) - 1;
+    while (end >= str && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n'))
+        *end-- = '\0';
 }

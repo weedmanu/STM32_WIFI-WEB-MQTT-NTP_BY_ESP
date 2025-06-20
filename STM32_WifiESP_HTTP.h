@@ -221,6 +221,15 @@ ESP01_Status_t esp01_http_stop_server(void);
  */
 ESP01_Status_t esp01_start_server_config(bool multi_conn, uint16_t port, bool ipdinfo);
 
+/**
+ * @brief  Récupère le statut du serveur HTTP
+ * @param  is_server Pointeur vers variable indiquant si le serveur est en cours d'exécution
+ * @param  port      Pointeur vers variable stockant le port du serveur
+ * @retval ESP01_Status_t ESP01_OK en cas de succès ou code d'erreur
+ * @note   Cette fonction vérifie l'état du serveur et retourne le port configuré
+ */
+ESP01_Status_t esp01_http_get_server_status(uint8_t *is_server, uint16_t *port);
+
 // --- Connexions ---
 /**
  * @brief Retourne le nombre de connexions actives.

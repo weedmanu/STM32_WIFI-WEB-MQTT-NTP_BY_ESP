@@ -1,34 +1,41 @@
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
- * @file           : main.c
- * @brief          : Programme principal pour le test du terminal AT
+ * @file           : Test_Terminal AT.c
+ * @brief          : Programme de test du terminal AT interactif pour ESP01
  ******************************************************************************
  * @details
- * Ce programme initialise le microcontrôleur STM32 et configure les périphériques nécessaires
- * pour communiquer avec un module ESP01 (ou tout module compatible AT) via une interface série (UART).
+ * Ce programme permet d'interagir directement avec un module ESP01 via un terminal
+ * série, en simulant un terminal AT classique. Il offre les fonctionnalités suivantes :
  *
- * Fonctionnement :
- * - L'UART2 est configurée pour servir de console série (liaison avec le PC) : elle redirige les fonctions printf/getchar,
- *   permettant à l'utilisateur de saisir des commandes AT et de voir les réponses sur un terminal série.
- * - L'UART1 est dédiée à la communication avec le module ESP01 : toutes les commandes AT sont envoyées à ce module,
- *   et les réponses sont récupérées via un DMA circulaire RX pour robustesse et performance (réception non bloquante et continue).
+ * - Initialisation du driver ESP01 avec communication UART/DMA
+ * - Interface console sur UART2 (PC) pour saisie des commandes AT
+ * - Transmission des commandes vers ESP01 via UART1
+ * - Affichage des réponses du module sur le terminal
+ * - Gestion des commandes longues avec timeout adapté
  *
- * Le programme permet ainsi d'envoyer des commandes AT depuis un terminal série PC, de les transmettre à l'ESP01,
- * puis d'afficher la réponse du module sur la console.
+ * Configuration matérielle :
+ * - UART1 : Communication avec le module ESP01
+ *   - Mode : Half-duplex
+ *   - DMA RX : Mode circulaire (buffer continu)
+ *   - Interruptions RX/TX : Désactivées (transmission gérée de manière synchrone)
+ *   - Transmission : Envoi par blocs avec attente active de fin de transmission
  *
- * Fichiers d'en-tête inclus :
- * - main.h : Définitions et prototypes spécifiques au projet.
- * - STM32_WifiESP.h : Fonctions du driver ESP01 (gestion des commandes AT, buffers, etc.).
- * - stdio.h : Pour l'utilisation de printf, getchar, etc.
+ * - UART2 : Console série avec l'ordinateur
+ *   - Mode : Full-duplex
+ *   - Interruptions : Activées pour la réception des caractères
+ *   - DMA : Non utilisé pour console utilisateur
  *
- * @attention
+ * L'utilisateur peut ainsi tester et déboguer toutes les fonctionnalités AT du module
+ * ESP01 directement depuis l'interface série, sans avoir besoin d'un logiciel externe
+ * spécifique ni de connexion directe au module.
  *
- * Copyright (c) 2025 STMicroelectronics.
- * Tous droits réservés.
- *
- * Ce logiciel est distribué selon les termes du fichier LICENSE
- * situé à la racine de ce logiciel. À défaut, il est fourni "EN L'ÉTAT".
+ * @note
+ * - Nécessite le driver STM32_WifiESP.
+ * - Compatible avec les modules ESP8266 (ESP01, ESP01S, etc.)
+ * - Baudrate par défaut: 115200 bps
+ * - La réception DMA circulaire permet de ne jamais manquer de données
+ * - Les interruptions UART pour la console utilisateur assurent une réactivité optimale
  *
  ******************************************************************************
  */
@@ -73,7 +80,7 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-// Pas de prototypes utilisateur spécifiques ici
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -132,19 +139,29 @@ int main(void)
 	MX_USART2_UART_Init();
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
+	HAL_Delay(1000); // Délai initial pour stabilisation des périphériques
+	printf("\n[TEST][INFO] === Démarrage du terminal AT pour ESP01 ===\r\n");
 	HAL_Delay(500);
-	printf("[STM32_WifiESP] ===== Test de la fonction terminal =====\r\n");
 	ESP01_Status_t status;
 
 	// Initialisation du driver ESP01
-	printf("\r\n[ESP01] === Initialisation du driver ESP01 ===\r\n");
-	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE); // Correction ici
-	printf("[ESP01] >>> Initialisation : %s\r\n", esp01_get_error_string(status));
-	HAL_Delay(250);
+	printf("\n[TEST][INFO] === Initialisation du driver ESP01 ===\r\n");
+	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
+	printf("[TEST][INFO] Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
+	if (status != ESP01_OK)
+	{
+		printf("[TEST][ERROR] L'initialisation du driver a échoué\r\n");
+		Error_Handler();
+	}
+	HAL_Delay(500);
 
-	// Démarre la réception IT sur la console série (UART de debug)
+	// Démarrage du terminal AT
+	printf("\n[TEST][INFO] === Démarrage du terminal interactif ===\r\n");
 	esp01_terminal_begin(&huart2);
-	HAL_Delay(250);
+	printf("[TEST][INFO] Terminal démarré, prêt à recevoir vos commandes AT\r\n");
+	printf("[TEST][INFO] Tapez vos commandes AT et appuyez sur Entrée\r\n");
+	printf("[TEST][INFO] Exemple: AT+GMR pour afficher la version du firmware\r\n");
+	HAL_Delay(500);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -152,8 +169,8 @@ int main(void)
 	while (1)
 	{
 		esp01_console_task(); // Tâche de gestion de la console série (UART2)
-		HAL_Delay(10);		 // Petite pause CPU
-							 /* USER CODE END WHILE */
+		HAL_Delay(10);		  // Petite pause CPU
+							  /* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
 	}

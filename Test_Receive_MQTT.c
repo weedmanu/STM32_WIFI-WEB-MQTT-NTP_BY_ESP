@@ -1,20 +1,51 @@
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
- * @file           : Receive_MQTT.c
- * @brief          : Exemple de réception MQTT avec STM32 et ESP01
+ * @file           : Test_Receive_MQTT.c
+ * @brief          : Programme de test de réception MQTT avec STM32 et ESP01
  ******************************************************************************
- * @attention
+ * @details
+ * Ce programme teste la réception de messages MQTT avec un STM32 connecté à
+ * un module ESP01. Il réalise les opérations suivantes :
  *
- * Copyright (c) 2025 STMicroelectronics.
- * All rights reserved.
+ * - Initialisation du driver ESP01
+ * - Vidage du buffer de réception
+ * - Test de communication AT basique
+ * - Connexion au réseau WiFi
+ * - Configuration du mode connexion unique (CIPMUX=0)
+ * - Récupération et affichage de l'adresse IP
+ * - Connexion à un broker MQTT local
+ * - Abonnement à un topic spécifique
+ * - Configuration d'un callback pour traiter les messages reçus
+ * - Traitement continu des messages MQTT entrants
  *
- * Ce fichier contient le code utilisateur pour tester la réception de messages MQTT
- * depuis un STM32 via un module ESP01. Il gère l'initialisation du WiFi,
- * la connexion au broker MQTT, l'abonnement à un topic, la gestion du callback
- * de réception et le clignotement d'une LED.
+ * Le programme affiche tous les messages reçus sur la console série et fait
+ * clignoter une LED pour indiquer que le système fonctionne correctement.
  *
- * Ce code est fourni "en l'état", sans garantie.
+ * Configuration matérielle :
+ * - UART1 : Communication avec le module ESP01
+ *   - Mode : Half-duplex
+ *   - DMA RX : Mode circulaire (buffer continu)
+ *
+ * - UART2 : Console série avec l'ordinateur
+ *   - Mode : Full-duplex
+ *   - Affichage des résultats via printf redirigé
+ *
+ * - LED2 : Indicateur visuel de fonctionnement
+ *   - Clignotement à intervalle régulier (500ms)
+ *
+ * Paramètres MQTT :
+ * - Broker : 192.168.1.185:1883 (remplacer par votre broker)
+ * - Client ID : généré dynamiquement (stm32_xxxx)
+ * - Topic : stm32/test
+ * - QoS : 0
+ *
+ * @note
+ * - Nécessite les modules STM32_WifiESP.h/.c et STM32_WifiESP_MQTT.h/.c
+ * - Compatible avec les modules ESP8266 (ESP01, ESP01S, etc.)
+ * - Baudrate par défaut: 115200 bps
+ * - Broker MQTT requis sur le réseau local
+ * - Ce programme fonctionne en continu sans s'arrêter
  *
  ******************************************************************************
  */
@@ -36,13 +67,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "XXXXXX"                 // Nom du réseau WiFi
+#define SSID "XXXXXXXX"				  // Nom du réseau WiFi
 #define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-// Pas de macro utilisateur spécifique ici
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -76,7 +107,7 @@ int __io_putchar(int ch)
 // Callback MQTT : affichera tout message reçu sur le topic
 void mqtt_message_callback(const char *topic, const char *payload)
 {
-  printf("[MQTT] Message reçu sur %s : %s\r\n", topic, payload); // Affiche le message reçu
+  printf("[TEST][INFO] Message MQTT reçu sur %s : %s\r\n", topic, payload); // Affiche le message reçu
 }
 /* USER CODE END 0 */
 
@@ -90,25 +121,41 @@ int main(void)
   MX_USART1_UART_Init();
 
   HAL_Delay(1000);
-  printf("\n[ESP01] === Démarrage du programme ===\r\n");
+  printf("\n[TEST][INFO] === Démarrage du programme de réception MQTT STM32-ESP01 ===\r\n");
   HAL_Delay(500);
 
   ESP01_Status_t status;
 
   // Initialisation ESP01
+  printf("\n[TEST][INFO] === Initialisation du module ESP01 ===\r\n");
   status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-  printf("[ESP01] >>> Initialisation : %s\r\n", esp01_get_error_string(status));
+  printf("[TEST][INFO] Initialisation ESP01 : %s\r\n", esp01_get_error_string(status));
+  if (status != ESP01_OK)
+  {
+    printf("[TEST][ERROR] Échec de l'initialisation ESP01\r\n");
+    Error_Handler();
+  }
+  HAL_Delay(500);
 
   // Flush RX
+  printf("\n[TEST][INFO] === Vidage du buffer RX ===\r\n");
   status = esp01_flush_rx_buffer(500);
-  printf("[ESP01] >>> Flush RX : %s\r\n", esp01_get_error_string(status));
+  printf("[TEST][INFO] Buffer UART/DMA vidé : %s\r\n", esp01_get_error_string(status));
   HAL_Delay(100);
 
   // Test AT
+  printf("\n[TEST][INFO] === Test de communication AT ===\r\n");
   status = esp01_test_at();
-  printf("[ESP01] >>> Test AT : %s\r\n", esp01_get_error_string(status));
+  printf("[TEST][INFO] Test AT : %s\r\n", esp01_get_error_string(status));
+  if (status != ESP01_OK)
+  {
+    printf("[TEST][ERROR] Échec du test de communication\r\n");
+    Error_Handler();
+  }
+  HAL_Delay(500);
 
   // Connexion WiFi
+  printf("\n[TEST][INFO] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
   status = esp01_connect_wifi_config(
       ESP01_WIFI_MODE_STA,
       SSID,
@@ -117,44 +164,83 @@ int main(void)
       NULL,
       NULL,
       NULL);
-  printf("[WIFI] >>> Connexion WiFi : %s\r\n", esp01_get_error_string(status));
+  printf("[TEST][INFO] Connexion WiFi : %s\r\n", esp01_get_error_string(status));
+  if (status != ESP01_OK)
+  {
+    printf("[TEST][ERROR] Échec de connexion au réseau WiFi\r\n");
+    Error_Handler();
+  }
+  HAL_Delay(1000);
 
   // Mode connexion unique
+  printf("\n[TEST][INFO] === Configuration du mode connexion unique ===\r\n");
   char resp[ESP01_DMA_RX_BUF_SIZE];
   status = esp01_send_raw_command_dma("AT+CIPMUX=0", resp, sizeof(resp), "OK", 3000);
+  printf("[TEST][INFO] Mode connexion unique : %s\r\n", esp01_get_error_string(status));
   if (status != ESP01_OK)
+  {
+    printf("[TEST][ERROR] Échec de configuration du mode connexion unique\r\n");
     Error_Handler();
+  }
+  HAL_Delay(500);
 
   // Adresse IP
+  printf("\n[TEST][INFO] === Récupération de l'adresse IP ===\r\n");
   char ip[32];
-  if (esp01_get_current_ip(ip, sizeof(ip)) == ESP01_OK)
-    printf("[WIFI] >>> IP : %s\r\n", ip);
+  status = esp01_get_current_ip(ip, sizeof(ip));
+  if (status == ESP01_OK)
+  {
+    printf("[TEST][INFO] Adresse IP : %s\r\n", ip);
+  }
+  else
+  {
+    printf("[TEST][WARN] Impossible d'obtenir l'adresse IP : %s\r\n", esp01_get_error_string(status));
+  }
+  HAL_Delay(500);
 
   // Connexion MQTT
+  printf("\n[TEST][INFO] === Connexion au broker MQTT ===\r\n");
   char broker_ip[] = "192.168.1.185";
   uint16_t broker_port = 1883;
   char client_id[16];
   snprintf(client_id, sizeof(client_id), "stm32_%lu", HAL_GetTick() & 0xFFFF);
 
+  printf("[TEST][INFO] Broker : %s:%d, Client ID : %s\r\n", broker_ip, broker_port, client_id);
   status = esp01_mqtt_connect(broker_ip, broker_port, client_id, NULL, NULL);
-  printf("[MQTT] Connexion broker : %s\r\n", esp01_get_error_string(status));
+  printf("[TEST][INFO] Connexion broker MQTT : %s\r\n", esp01_get_error_string(status));
   if (status != ESP01_OK)
+  {
+    printf("[TEST][ERROR] Échec de connexion au broker MQTT\r\n");
     Error_Handler();
+  }
+  HAL_Delay(500);
 
   // Abonnement
+  printf("\n[TEST][INFO] === Abonnement au topic MQTT ===\r\n");
   const char *topic = "stm32/test";
   status = esp01_mqtt_subscribe(topic, 0);
-  printf("[MQTT] Abonnement %s : %s\r\n", topic, esp01_get_error_string(status));
+  printf("[TEST][INFO] Abonnement au topic \"%s\" : %s\r\n", topic, esp01_get_error_string(status));
   if (status != ESP01_OK)
+  {
+    printf("[TEST][ERROR] Échec d'abonnement au topic\r\n");
     Error_Handler();
+  }
+  HAL_Delay(500);
 
   // Callback réception
+  printf("\n[TEST][INFO] === Configuration du callback de réception ===\r\n");
   esp01_mqtt_set_message_callback(mqtt_message_callback);
+  printf("[TEST][INFO] Callback de réception configuré\r\n");
+
+  printf("\n[TEST][INFO] === Démarrage de la boucle d'écoute MQTT ===\r\n");
+  printf("[TEST][INFO] En attente de messages sur le topic \"%s\"...\r\n", topic);
 
   // Boucle principale : juste réception et clignotement LED
   while (1)
   {
-    esp01_mqtt_poll(); // Vérifie si un message est reçu et appelle le callback
+    esp01_mqtt_poll();                          // Vérifie si un message est reçu et appelle le callback
+    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin); // Clignote la LED pour indiquer que le programme tourne
+    HAL_Delay(500);                             // Délai pour le clignotement
   }
 }
 

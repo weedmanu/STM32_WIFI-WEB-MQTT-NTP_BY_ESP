@@ -1,24 +1,56 @@
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
- * @file           : Send_MQTT.c
- * @brief          : Exemple d'envoi MQTT avec STM32 et ESP01
+ * @file           : Test_Send_MQTT.c
+ * @brief          : Programme de test d'envoi MQTT avec STM32 et ESP01
  ******************************************************************************
- * @attention
+ * @details
+ * Ce programme teste l'envoi de messages MQTT depuis un STM32 connecté à
+ * un module ESP01. Il exécute séquentiellement les opérations suivantes :
  *
- * Copyright (c) 2025 STMicroelectronics.
- * All rights reserved.
+ * - Initialisation du driver ESP01
+ * - Vidage du buffer de réception
+ * - Connexion au réseau WiFi
+ * - Configuration du mode connexion unique (CIPMUX=0)
+ * - Récupération et affichage de l'adresse IP
+ * - Connexion à un broker MQTT local (avec ID client généré dynamiquement)
+ * - Publication d'un premier message MQTT
+ * - Envoi d'un PING pour maintenir la connexion
+ * - Publication d'un second message MQTT
+ * - Déconnexion propre du broker MQTT
  *
- * Ce fichier contient le code utilisateur pour tester l'envoi de messages MQTT
- * depuis un STM32 via un module ESP01. Il gère l'initialisation du WiFi,
- * la connexion au broker MQTT, la publication de messages et la gestion
- * de la LED de la carte.
+ * Le programme affiche tous les résultats sur la console série et gère
+ * les cas d'erreur avec plusieurs tentatives de connexion au broker.
  *
- * Ce code est fourni "en l'état", sans garantie.
+ * Configuration matérielle :
+ * - UART1 : Communication avec le module ESP01
+ *   - Mode : Half-duplex
+ *   - DMA RX : Mode circulaire (buffer continu)
+ *
+ * - UART2 : Console série avec l'ordinateur
+ *   - Mode : Full-duplex
+ *   - Affichage des résultats via printf redirigé
+ *
+ * Paramètres MQTT :
+ * - Broker : 192.168.1.185:1883 (broker local)
+ * - Client ID : stmXXXX (généré dynamiquement)
+ * - Topic : stm32/test
+ * - QoS : 0
+ * - Messages publiés :
+ *   1. "Hello World !!!"
+ *   2. "I am a STM32 with wifi now !!!"
+ *
+ * @note
+ * - Nécessite les modules STM32_WifiESP.h/.c et STM32_WifiESP_MQTT.h/.c
+ * - Compatible avec les modules ESP8266 (ESP01, ESP01S, etc.)
+ * - Baudrate par défaut: 115200 bps
+ * - Programme démonstratif prévu pour s'exécuter une seule fois
+ * - Nécessite un broker MQTT actif sur le réseau local
  *
  ******************************************************************************
  */
 /* USER CODE END Header */
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
@@ -32,7 +64,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-// Pas de typedef utilisateur spécifique ici
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
