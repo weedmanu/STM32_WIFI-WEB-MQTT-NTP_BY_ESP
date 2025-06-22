@@ -94,7 +94,7 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-// Pas de prototypes utilisateur spécifiques ici
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/

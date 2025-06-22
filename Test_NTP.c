@@ -154,8 +154,8 @@ int main(void)
 	HAL_Delay(1000);
 
 	/* Connexion au réseau WiFi */
-	printf("\n[TEST][INFO] === Connexion au réseau WiFi \"%s\" ===\r\n", WIFI_SSID);
-	status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, WIFI_SSID, WIFI_PASSWORD, true, NULL, NULL, NULL);
+	printf("\n[TEST][INFO] === Connexion au réseau WiFi \"%s\" ===\r\n", SSID);
+	status = esp01_connect_wifi_config(ESP01_WIFI_MODE_STA, SSID, PASSWORD, true, NULL, NULL, NULL);
 	printf("[TEST][INFO] Connexion WiFi: %s\r\n", esp01_get_error_string(status));
 	if (status != ESP01_OK)
 	{
