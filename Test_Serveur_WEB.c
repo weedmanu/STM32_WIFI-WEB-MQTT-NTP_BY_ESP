@@ -275,7 +275,17 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 			{
 				snprintf(row, sizeof(row), "<div class='param'><span class='paramname'>%s :</span> <span class='paramval'></span></div>", token);
 			}
-			strncat(params_html, row, sizeof(params_html) - strlen(params_html) - 1);
+			// Concaténation sécurisée avec vérification d'espace restant
+			size_t current_len = strlen(params_html);
+			size_t space_left = sizeof(params_html) - current_len - 1; // -1 pour \0
+			if (strlen(row) < space_left)
+			{
+				strncat(params_html, row, space_left);
+			}
+			else
+			{
+				break; // Arrêter si plus d'espace
+			}
 			nb_lignes++;
 			token = strtok(NULL, "&");
 		}
@@ -286,9 +296,28 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 		params_html[sizeof(params_html) - 1] = '\0';
 	}
 
-	strncat(html, params_html, sizeof(html) - strlen(html) - 1);
-	strncat(html, "<br><a class='button green' href='/'>Retour accueil</a>", sizeof(html) - strlen(html) - 1);
-	strncat(html, HTML_CARD_END_BODY_END, sizeof(html) - strlen(html) - 1);
+	// Concaténation sécurisée du contenu final
+	size_t html_current_len = strlen(html);
+	size_t html_space_left = sizeof(html) - html_current_len - 1; // -1 pour \0
+
+	char *final_content = "<br><a class='button green' href='/'>Retour accueil</a>";
+	if (strlen(params_html) + strlen(final_content) + strlen(HTML_CARD_END_BODY_END) < html_space_left)
+	{
+		strncat(html, params_html, html_space_left);
+		html_current_len = strlen(html);
+		html_space_left = sizeof(html) - html_current_len - 1;
+
+		strncat(html, final_content, html_space_left);
+		html_current_len = strlen(html);
+		html_space_left = sizeof(html) - html_current_len - 1;
+
+		strncat(html, HTML_CARD_END_BODY_END, html_space_left);
+	}
+	else
+	{
+		// Fallback si pas assez d'espace - utiliser snprintf pour tronquer proprement
+		snprintf(html + html_current_len, html_space_left, "%s%s%s", params_html, final_content, HTML_CARD_END_BODY_END);
+	}
 
 	printf("[TEST][INFO] Sortie de page_testget, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
 	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
@@ -407,7 +436,7 @@ static void collect_system_info(system_info_t *info)
 		return;
 
 	// Firmware ESP01
-	strcpy(info->at_version, "N/A");
+	esp01_safe_strcpy(info->at_version, sizeof(info->at_version), "N/A");
 	char resp[256] = {0};
 	if (esp01_get_at_version(resp, sizeof(resp)) == ESP01_OK)
 	{
@@ -426,29 +455,29 @@ static void collect_system_info(system_info_t *info)
 	}
 
 	// Type de carte STM32
-	strcpy(info->stm32_type, "STM32 inconnue");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32 inconnue");
 #if defined(STM32L4)
-	strcpy(info->stm32_type, "STM32L4");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32L4");
 #elif defined(STM32F4)
-	strcpy(info->stm32_type, "STM32F4");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F4");
 #elif defined(STM32L1)
-	strcpy(info->stm32_type, "STM32L1");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32L1");
 #elif defined(STM32F1)
-	strcpy(info->stm32_type, "STM32F1");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F1");
 #elif defined(STM32F7)
-	strcpy(info->stm32_type, "STM32F7");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F7");
 #elif defined(STM32H7)
-	strcpy(info->stm32_type, "STM32H7");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32H7");
 #endif
 
 	// Config WiFi - Utiliser directement la valeur de ESP01_WIFI_MODE_STA
 	if (ESP01_WIFI_MODE_STA == 1)
 	{
-		strcpy(info->wifi_mode, "STA");
+		esp01_safe_strcpy(info->wifi_mode, sizeof(info->wifi_mode), "STA");
 	}
 	else
 	{
-		strcpy(info->wifi_mode, "AP");
+		esp01_safe_strcpy(info->wifi_mode, sizeof(info->wifi_mode), "AP");
 	}
 
 	info->wifi_ssid = SSID;

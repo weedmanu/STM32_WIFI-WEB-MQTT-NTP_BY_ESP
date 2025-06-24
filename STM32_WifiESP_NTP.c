@@ -32,6 +32,9 @@
 #define ESP01_NTP_MIN_VALID_YEAR 1971 // Année minimum valide
 #define ESP01_NTP_MIN_DATE_LEN 8      // Longueur minimale d'une date valide
 
+/* ==================== CONSTANTES SPÉCIFIQUES AU MODULE ==================== */
+#define ESP01_NTP_SYNC_TIMEOUT 5000 // Timeout synchronisation NTP (ms)
+
 /* ==================== VARIABLES STATIQUES ==================== */
 
 /**
@@ -66,25 +69,38 @@ static void apply_dst(ntp_datetime_t *dt);
  */
 ESP01_Status_t esp01_configure_ntp(const char *ntp_server, int timezone, int sync_period_s, bool dst_enable)
 {
-    ESP01_LOG_INFO("NTP", "Configuration NTP : serveur=%s, timezone=%d, period=%d, dst=%d",
-                   ntp_server, timezone, sync_period_s, dst_enable); // Log de la configuration demandée
-    VALIDATE_PARAM(ntp_server && strlen(ntp_server) < ESP01_NTP_MAX_SERVER_LEN, ESP01_INVALID_PARAM);
-    if (esp01_check_buffer_size(strlen(ntp_server), ESP01_NTP_MAX_SERVER_LEN - 1) != ESP01_OK)
+    ESP01_LOG_DEBUG("NTP", "Configuration NTP : serveur=%s, timezone=%d, period=%d, dst=%d",
+                    ntp_server, timezone, sync_period_s, dst_enable); // Log de la configuration demandée
+
+    VALIDATE_PARAM(ntp_server && strlen(ntp_server) < ESP01_NTP_MAX_SERVER_LEN, ESP01_INVALID_PARAM); // Vérifie la validité du nom de serveur
+
+    if (esp01_check_buffer_size(strlen(ntp_server), ESP01_NTP_MAX_SERVER_LEN - 1) != ESP01_OK) // Vérifie la taille du nom de serveur
     {
-        ESP01_LOG_ERROR("NTP", "Dépassement de la taille du buffer serveur NTP");
-        ESP01_RETURN_ERROR("NTP_CONFIG", ESP01_BUFFER_OVERFLOW);
+        ESP01_LOG_ERROR("NTP", "Dépassement de la taille du buffer serveur NTP"); // Log d'erreur
+        ESP01_RETURN_ERROR("NTP_CONFIG", ESP01_BUFFER_OVERFLOW);                  // Retourne l'erreur
     }
 
-    // Utiliser strncpy de façon sécurisée avec vérification explicite
-    memset(g_ntp_config.server, 0, ESP01_NTP_MAX_SERVER_LEN);
-    strncpy(g_ntp_config.server, ntp_server, ESP01_NTP_MAX_SERVER_LEN - 1);
+    // Utiliser esp01_safe_strcpy pour la copie sécurisée
+    if (esp01_safe_strcpy(g_ntp_config.server, ESP01_NTP_MAX_SERVER_LEN, ntp_server) != ESP01_OK)
+    {
+        ESP01_LOG_ERROR("NTP", "Erreur lors de la copie du nom de serveur NTP"); // Log d'erreur
+        ESP01_RETURN_ERROR("NTP_CONFIG", ESP01_BUFFER_OVERFLOW);                 // Retourne l'erreur
+    }
 
     g_ntp_config.timezone = timezone;      // Affectation du fuseau horaire
     g_ntp_config.period_s = sync_period_s; // Affectation de la période de synchronisation
     g_ntp_config.dst_enable = dst_enable;  // Activation/désactivation du DST
 
-    ESP01_LOG_INFO("NTP", "Configuration NTP appliquée"); // Log de succès
-    return ESP01_OK;                                      // Retourne OK
+    ESP01_LOG_DEBUG("NTP", "Configuration NTP appliquée"); // Log de succès
+    return ESP01_OK;                                       // Retourne OK
+}
+/**
+ * @brief Vérifie si la synchronisation NTP périodique est activée.
+ * @retval true si la synchronisation périodique est active, false sinon.
+ */
+bool esp01_ntp_is_periodic_enabled(void)
+{
+    return g_initialized; // Retourne l'état de la synchronisation périodique
 }
 
 /**
@@ -94,67 +110,73 @@ ESP01_Status_t esp01_configure_ntp(const char *ntp_server, int timezone, int syn
  */
 ESP01_Status_t esp01_ntp_start_sync(bool periodic)
 {
-    ESP01_LOG_INFO("NTP", "Démarrage de la synchronisation NTP (periodic=%d)", periodic);
+    ESP01_LOG_DEBUG("NTP", "Démarrage de la synchronisation NTP (periodic=%d)", periodic); // Log du mode de synchro
 
     // Application de la configuration NTP au module ESP01
     ESP01_Status_t st = esp01_apply_ntp_config(
-        1,
-        g_ntp_config.timezone,
-        g_ntp_config.server,
-        g_ntp_config.period_s);
+        1,                      // Active NTP
+        g_ntp_config.timezone,  // Fuseau horaire
+        g_ntp_config.server,    // Serveur NTP
+        g_ntp_config.period_s); // Période de synchro
 
-    if (st != ESP01_OK)
+    if (st != ESP01_OK) // Vérifie le succès de la configuration
     {
-        ESP01_LOG_ERROR("NTP", "Echec de l'application de la configuration NTP (code=%d)", st);
-        ESP01_RETURN_ERROR("NTP_START_SYNC", st);
+        ESP01_LOG_ERROR("NTP", "Echec de l'application de la configuration NTP (code=%d)", st); // Log d'erreur
+        ESP01_RETURN_ERROR("NTP_START_SYNC", st);                                               // Retourne l'erreur
     }
 
     if (!periodic) // Mode one-shot
     {
-        HAL_Delay(ESP01_NTP_INIT_DELAY_MS); // Attente pour initialisation NTP
-
-        char buf[ESP01_NTP_DATETIME_BUF_SIZE];
-        for (int i = 0; i < ESP01_NTP_SYNC_RETRY; ++i)
+        HAL_Delay(ESP01_NTP_INIT_DELAY_MS);            // Attente pour initialisation NTP
+        g_ntp_updated = 0;                             // Réinitialise le flag de mise à jour
+        char buf[ESP01_NTP_DATETIME_BUF_SIZE];         // Buffer pour la date/heure NTP
+        for (int i = 0; i < ESP01_NTP_SYNC_RETRY; ++i) // Boucle de tentatives de synchro
         {
-            st = esp01_get_ntp_time(buf, sizeof(buf));
-            if (st == ESP01_OK && strlen(buf) > 0)
+            st = esp01_get_ntp_time(buf, sizeof(buf)); // Récupère l'heure NTP
+            if (st == ESP01_OK && strlen(buf) > 0)     // Vérifie le succès
             {
-                // Vérifier la validité de la date NTP (éviter 1970)
-                ntp_datetime_t dt;
-                if (esp01_parse_ntp_esp01(buf, &dt) == ESP01_OK && dt.year > 1970)
+                ntp_datetime_t dt;                                                 // Structure pour le parsing
+                if (esp01_parse_ntp_esp01(buf, &dt) == ESP01_OK && dt.year > 1970) // Parsing et validité
                 {
-                    if (esp01_check_buffer_size(strlen(buf), ESP01_NTP_DATETIME_BUF_SIZE - 1) != ESP01_OK)
+                    if (esp01_check_buffer_size(strlen(buf), ESP01_NTP_DATETIME_BUF_SIZE - 1) != ESP01_OK) // Vérifie la taille du buffer
                     {
-                        ESP01_LOG_ERROR("NTP", "Dépassement de la taille du buffer datetime NTP");
-                        ESP01_RETURN_ERROR("NTP_START_SYNC", ESP01_BUFFER_OVERFLOW);
+                        ESP01_LOG_ERROR("NTP", "Dépassement de la taille du buffer datetime NTP"); // Log d'erreur
+                        ESP01_RETURN_ERROR("NTP_START_SYNC", ESP01_BUFFER_OVERFLOW);               // Retourne l'erreur
                     }
-                    // Copier la date obtenue dans le buffer global
-                    strncpy(g_last_datetime, buf, ESP01_NTP_DATETIME_BUF_SIZE - 1);
-                    g_last_datetime[ESP01_NTP_DATETIME_BUF_SIZE - 1] = '\0';
-                    g_ntp_updated = 1;
-                    ESP01_LOG_INFO("NTP", "Synchronisation NTP réussie : %s", g_last_datetime);
-                    return ESP01_OK;
+                    // Copie la date obtenue dans le buffer global
+                    if (esp01_safe_strcpy(g_last_datetime, ESP01_NTP_DATETIME_BUF_SIZE, buf) != ESP01_OK)
+                    {
+                        ESP01_LOG_ERROR("NTP", "Erreur lors de la copie de la date/heure NTP"); // Log d'erreur
+                        ESP01_RETURN_ERROR("NTP_START_SYNC", ESP01_BUFFER_OVERFLOW);            // Retourne l'erreur
+                    }
+                    ESP01_LOG_DEBUG("NTP", "Synchronisation NTP réussie : %s", g_last_datetime); // Log succès
+                    ESP01_LOG_DEBUG("NTP", "Date brute one-shot : %s", g_last_datetime);         // Log date brute
+                    ESP01_LOG_DEBUG("NTP", "Structure après parsing : %02d/%02d/%04d %02d:%02d:%02d (wday=%d, DST=%d)",
+                                    dt.day, dt.month, dt.year, dt.hour, dt.min, dt.sec, dt.wday, dt.dst); // Log structure
+                    return ESP01_OK;                                                                      // Succès
                 }
-                else
+                else // Parsing ou date invalide
                 {
-                    ESP01_LOG_ERROR("NTP", "Synchronisation NTP échouée ou date invalide : %s", buf);
+                    ESP01_LOG_ERROR("NTP", "Synchronisation NTP échouée ou date invalide : %s", buf); // Log d'erreur
                 }
             }
-            else
+            else // Si la récupération de l'heure NTP a échoué
             {
-                ESP01_LOG_WARN("NTP", "Tentative %d de récupération de l'heure NTP échouée", i + 1);
+                ESP01_LOG_WARN("NTP", "Tentative %d de récupération de l'heure NTP échouée", i + 1); // Log tentative échouée
             }
-            HAL_Delay(ESP01_NTP_SYNC_RETRY_MS);
+            ESP01_LOG_DEBUG("NTP", "Tentative %d : réponse brute = '%s'", i + 1, buf); // Log de la réponse brute
+            HAL_Delay(ESP01_NTP_SYNC_RETRY_MS);                                        // Attente avant nouvelle tentative
         }
-        ESP01_LOG_ERROR("NTP", "Impossible de récupérer une date NTP valide après %d tentatives", ESP01_NTP_SYNC_RETRY);
-        ESP01_RETURN_ERROR("NTP_START_SYNC", ESP01_FAIL);
+        ESP01_LOG_ERROR("NTP", "Impossible de récupérer une date NTP valide après %d tentatives", ESP01_NTP_SYNC_RETRY); // Log d'échec final
+        ESP01_RETURN_ERROR("NTP_START_SYNC", ESP01_FAIL);                                                                // Retourne l'échec
     }
-
-    // Mode périodique
-    g_initialized = true;
-    g_last_sync_time = 0; // Force une première synchronisation immédiate
-    ESP01_LOG_INFO("NTP", "Synchronisation NTP périodique activée");
-    return ESP01_OK;
+    else // Mode périodique
+    {
+        g_initialized = true;                                             // Active la synchro périodique
+        g_last_sync_time = 0;                                             // Force une première synchro immédiate
+        ESP01_LOG_DEBUG("NTP", "Synchronisation NTP périodique activée"); // Log activation périodique
+        return ESP01_OK;                                                  // Succès
+    }
 }
 
 /**
@@ -173,8 +195,8 @@ ESP01_Status_t esp01_apply_ntp_config(uint8_t enable, int timezone, const char *
     char resp[ESP01_MAX_RESP_BUF] = {0}; // Buffer pour la réponse
     ESP01_Status_t st;                   // Variable de statut
 
-    ESP01_LOG_INFO("NTP", "Application de la configuration NTP : enable=%d, timezone=%d, server=%s",
-                   enable, timezone, server); // Log de la configuration
+    ESP01_LOG_DEBUG("NTP", "Application de la configuration NTP : enable=%d, timezone=%d, server=%s",
+                    enable, timezone, server); // Log de la configuration
 
     // Construction de la commande sécurisée avec vérification des limites
     int written = snprintf(cmd, sizeof(cmd), "AT+CIPSNTPCFG=%d,%d,\"%s\"", enable, timezone, server);
@@ -193,8 +215,8 @@ ESP01_Status_t esp01_apply_ntp_config(uint8_t enable, int timezone, const char *
         ESP01_RETURN_ERROR("NTP_APPLY_CONFIG", st);                                 // Retourne l'erreur
     }
 
-    ESP01_LOG_INFO("NTP", "Configuration NTP envoyée avec succès"); // Log de succès
-    return st;                                                      // Retourne le statut
+    ESP01_LOG_DEBUG("NTP", "Configuration NTP envoyée avec succès"); // Log de succès
+    return st;                                                       // Retourne le statut
 }
 
 /**
@@ -203,76 +225,78 @@ ESP01_Status_t esp01_apply_ntp_config(uint8_t enable, int timezone, const char *
  */
 ESP01_Status_t esp01_ntp_handle(void)
 {
-    if (!g_initialized)
+    if (!g_initialized) // Vérifie si la synchro périodique est active
     {
-        ESP01_LOG_WARN("NTP", "Module non initialisé");
-        ESP01_RETURN_ERROR("NTP_HANDLE", ESP01_NOT_INITIALIZED);
+        return ESP01_OK; // Ne rien faire, pas de log et pas de traitement si non initialisé
     }
 
-    uint32_t current_time = HAL_GetTick();
-    uint32_t sync_interval = g_ntp_config.period_s * 1000; // Conversion en ms
+    uint32_t current_time = HAL_GetTick();                 // Récupère le temps système actuel (ms)
+    uint32_t sync_interval = g_ntp_config.period_s * 1000; // Calcule l'intervalle de synchro en ms
 
-    // Vérifier s'il est temps de synchroniser
-    if ((current_time - g_last_sync_time) >= sync_interval)
+    // Vérifie s'il est temps de synchroniser
+    if ((current_time - g_last_sync_time) >= sync_interval) // Si oui
     {
-        ESP01_LOG_DEBUG("NTP", "Synchro NTP périodique...");
+        ESP01_LOG_DEBUG("NTP", "Synchro NTP périodique..."); // Log début de synchro
 
-        // Récupérer l'heure NTP
-        char datetime_str[ESP01_NTP_DATETIME_BUF_SIZE] = {0};
-        ESP01_Status_t status = esp01_get_ntp_time(datetime_str, sizeof(datetime_str));
+        // Récupère l'heure NTP depuis le module
+        char datetime_str[ESP01_NTP_DATETIME_BUF_SIZE] = {0};                           // Buffer pour la date brute
+        ESP01_Status_t status = esp01_get_ntp_time(datetime_str, sizeof(datetime_str)); // Récupération
 
-        if (status == ESP01_OK && strlen(datetime_str) > 0)
+        if (status == ESP01_OK && strlen(datetime_str) > 0) // Vérifie le succès et la présence d'une date
         {
-            ESP01_LOG_DEBUG("NTP", "Date extraite: '%s'", datetime_str);
+            ESP01_LOG_DEBUG("NTP", "Date extraite: '%s'", datetime_str); // Log la date brute
 
-            // Parse la date récupérée
-            ntp_datetime_t dt;
+            ntp_datetime_t dt; // Structure pour le parsing
 
-            if (esp01_parse_ntp_esp01(datetime_str, &dt) == ESP01_OK)
+            if (esp01_parse_ntp_esp01(datetime_str, &dt) == ESP01_OK) // Parsing de la date brute
             {
                 ESP01_LOG_DEBUG("NTP", "Date parsée: %02d/%02d/%04d %02d:%02d:%02d (jour %d)",
-                                dt.day, dt.month, dt.year, dt.hour, dt.min, dt.sec, dt.wday);
+                                dt.day, dt.month, dt.year, dt.hour, dt.min, dt.sec, dt.wday); // Log parsing réussi
 
-                // Appliquer le DST si activé
+                // Applique le DST si activé dans la config
                 if (g_ntp_config.dst_enable)
                 {
-                    apply_dst(&dt);
-                    dt.dst = true; // Marquer comme ajusté DST
+                    apply_dst(&dt); // Applique le DST
+                    dt.dst = true;  // Marque comme ajusté DST
+                    ESP01_LOG_DEBUG("NTP", "Structure après DST : %02d/%02d/%04d %02d:%02d:%02d (wday=%d, DST=%d)",
+                                    dt.day, dt.month, dt.year, dt.hour, dt.min, dt.sec, dt.wday, dt.dst); // Log après DST
                 }
 
-                // Stocker la date NTP brute
-                memset(g_last_datetime, 0, ESP01_NTP_DATETIME_BUF_SIZE);
-                strncpy(g_last_datetime, datetime_str, ESP01_NTP_DATETIME_BUF_SIZE - 1);
-                g_ntp_updated = 1;
+                // Stocke la date brute dans la variable globale
+                if (esp01_safe_strcpy(g_last_datetime, ESP01_NTP_DATETIME_BUF_SIZE, datetime_str) != ESP01_OK)
+                {
+                    ESP01_LOG_ERROR("NTP", "Erreur lors de la copie de la date NTP brute"); // Log d'erreur
+                    return ESP01_BUFFER_OVERFLOW;                                           // Retourne l'erreur
+                }
+                g_ntp_updated = 1; // Signale qu'une nouvelle date est disponible
 
-                // Formater pour affichage
+                // Formate pour affichage (FR et EN)
                 char buffer_fr[100] = {0};
                 char buffer_en[100] = {0};
 
                 if (esp01_format_datetime_fr(&dt, buffer_fr, sizeof(buffer_fr)) == ESP01_OK &&
                     esp01_format_datetime_en(&dt, buffer_en, sizeof(buffer_en)) == ESP01_OK)
                 {
-                    printf("\r\n[NTP] Date/heure: %s\r\n", buffer_fr);
-                    printf("[NTP] Date/time: %s\r\n", buffer_en);
+                    ESP01_LOG_DEBUG("[NTP]", "Date/heure: '%s'", buffer_fr); // Log FR
+                    ESP01_LOG_DEBUG("[NTP]", "Date/time: '%s'", buffer_en);  // Log EN
                 }
             }
             else
             {
-                ESP01_LOG_ERROR("NTP", "Erreur lors du parsing de la date");
+                ESP01_LOG_ERROR("NTP", "Erreur lors du parsing de la date"); // Log parsing échoué
             }
         }
         else
         {
-            ESP01_LOG_WARN("NTP", "Échec de récupération de l'heure NTP");
+            ESP01_LOG_WARN("NTP", "Échec de récupération de l'heure NTP"); // Log échec récupération
         }
 
-        // Mise à jour du timestamp de dernière synchro, même en cas d'échec
+        // Met à jour le timestamp de dernière synchro, même en cas d'échec
         g_last_sync_time = current_time;
     }
 
-    return ESP01_OK;
+    return ESP01_OK; // Retourne OK
 }
-
 /**
  * @brief  Récupère la date/heure NTP depuis le module ESP01 (commande AT).
  * @param  datetime_buf Buffer de sortie.
@@ -330,76 +354,82 @@ ESP01_Status_t esp01_get_ntp_time(char *datetime_buf, size_t bufsize)
 /* ==================== FONCTIONS DST (DAYLIGHT SAVING TIME) ==================== */
 
 /**
- * @brief Vérifie si l'heure d'été doit être appliquée selon règles européennes
- * @param dt Structure date/heure
- * @return true si heure d'été active, false sinon
+ * @brief Vérifie si l'heure d'été doit être appliquée selon les règles européennes.
+ * @param dt Structure date/heure à tester.
+ * @return true si heure d'été active, false sinon.
  */
 static bool is_dst_active(const ntp_datetime_t *dt)
 {
-    VALIDATE_PARAM(dt, false);
+    VALIDATE_PARAM(dt, false); // Vérifie la validité du pointeur
 
-    ESP01_LOG_DEBUG("NTP", "Vérification du DST pour %02d/%02d/%04d", dt->day, dt->month, dt->year);
+    ESP01_LOG_DEBUG("NTP", "Vérification du DST pour %02d/%02d/%04d", dt->day, dt->month, dt->year); // Log de vérification
 
-    // Ne pas appliquer le DST si désactivé dans la config
-    if (!g_ntp_config.dst_enable)
+    if (!g_ntp_config.dst_enable) // Si le DST est désactivé dans la config
     {
-        ESP01_LOG_DEBUG("NTP", "DST désactivé dans la configuration");
-        return false;
+        ESP01_LOG_DEBUG("NTP", "DST désactivé dans la configuration"); // Log si DST désactivé
+        return false;                                                  // DST non appliqué
     }
 
-    // Règle européenne simplifiée:
-    // - Dernier dimanche de mars à 2h -> Dernier dimanche d'octobre à 3h
-
+    // Mois hors période DST (janvier, février, novembre, décembre)
     if (dt->month < 3 || dt->month > 10)
-    {
-        // Janvier, février, novembre et décembre: heure d'hiver
-        return false;
-    }
+        return false; // Heure d'hiver
 
+    // Mois entièrement en DST (avril à septembre)
     if (dt->month > 3 && dt->month < 10)
-    {
-        // Avril à septembre: heure d'été
-        return true;
-    }
+        return true; // Heure d'été
 
-    // Pour mars: dernier dimanche à 2h -> heure d'été
+    // Calcul du dernier dimanche du mois (algorithme de Zeller)
+    int y = dt->year;     // Année courante
+    int m = dt->month;    // Mois courant
+    int last_sunday = 31; // Dernier jour possible du mois
+
+    // Pour mars : passage à l'heure d'été le dernier dimanche à 2h
     if (dt->month == 3)
     {
-        // Le dernier dimanche est entre le 25 et le 31
-        int last_sunday = 31;
-        while (last_sunday >= 25)
+        // Recherche du dernier dimanche de mars
+        for (; last_sunday >= 25; --last_sunday)
         {
-            // Calcul simpliste pour exemple
-            // Une implémentation complète nécessiterait une formule plus précise
-            int wday = (dt->year / 4 + dt->year + 3 + last_sunday) % 7; // Approximation
-            if (wday == 0)
-                break; // C'est un dimanche
-            last_sunday--;
+            int d = last_sunday;
+            int mm = m;
+            int yy = y;
+            if (mm < 3)
+            {
+                mm += 12;
+                yy -= 1;
+            } // Ajustement pour Zeller
+            int zeller = (d + (13 * (mm + 1)) / 5 + yy + yy / 4 - yy / 100 + yy / 400) % 7; // Zeller: 0=sam, 1=dim, ..., 6=ven
+            if (zeller == 1)                                                                // 1 = dimanche
+                break;                                                                      // On a trouvé le dernier dimanche
         }
-
-        ESP01_LOG_DEBUG("NTP", "Mars - Dernier dimanche le %d", last_sunday);
+        ESP01_LOG_DEBUG("NTP", "Mars - Dernier dimanche le %d", last_sunday); // Log du dernier dimanche de mars
+        // DST actif après 2h du dernier dimanche de mars
         return (dt->day > last_sunday || (dt->day == last_sunday && dt->hour >= 2));
     }
 
-    // Pour octobre: dernier dimanche à 3h -> heure d'hiver
+    // Pour octobre : retour à l'heure d'hiver le dernier dimanche à 3h
     if (dt->month == 10)
     {
-        // Le dernier dimanche est entre le 25 et le 31
-        int last_sunday = 31;
-        while (last_sunday >= 25)
+        // Recherche du dernier dimanche d'octobre
+        for (; last_sunday >= 25; --last_sunday)
         {
-            // Calcul simpliste pour exemple
-            int wday = (dt->year / 4 + dt->year + 0 + last_sunday) % 7; // Approximation
-            if (wday == 0)
-                break; // C'est un dimanche
-            last_sunday--;
+            int d = last_sunday;
+            int mm = m;
+            int yy = y;
+            if (mm < 3)
+            {
+                mm += 12;
+                yy -= 1;
+            }
+            int zeller = (d + (13 * (mm + 1)) / 5 + yy + yy / 4 - yy / 100 + yy / 400) % 7;
+            if (zeller == 1)
+                break;
         }
-
-        ESP01_LOG_DEBUG("NTP", "Octobre - Dernier dimanche le %d", last_sunday);
+        ESP01_LOG_DEBUG("NTP", "Octobre - Dernier dimanche le %d", last_sunday); // Log du dernier dimanche d'octobre
+        // DST actif avant 3h du dernier dimanche d'octobre
         return (dt->day < last_sunday || (dt->day == last_sunday && dt->hour < 3));
     }
 
-    return false;
+    return false; // Cas par défaut (ne devrait pas arriver)
 }
 
 /**
@@ -408,185 +438,128 @@ static bool is_dst_active(const ntp_datetime_t *dt)
  */
 static void apply_dst(ntp_datetime_t *dt)
 {
-    VALIDATE_PARAM_VOID(dt);
+    VALIDATE_PARAM_VOID(dt); // Vérifie la validité du pointeur
 
-    if (!g_ntp_config.dst_enable)
+    if (!g_ntp_config.dst_enable) // Si le DST est désactivé dans la config
     {
-        dt->dst = false;
-        return;
+        dt->dst = false; // On indique que le DST n'est pas appliqué
+        return;          // Sortie immédiate
     }
 
-    bool dst_active = is_dst_active(dt);
+    bool dst_active = is_dst_active(dt); // Vérifie si le DST doit être appliqué
 
-    if (dst_active)
+    if (dst_active) // Si le DST est actif
     {
-        // Ajout de la sauvegarde de l'heure actuelle pour le log
-        int prev_hour = dt->hour;
+        int prev_hour = dt->hour; // Sauvegarde de l'heure avant modification (pour le log)
 
-        dt->hour += 1;
+        dt->hour += 1; // Ajoute 1h pour le passage à l'heure d'été
 
         // Gestion du passage au jour suivant si nécessaire
         if (dt->hour >= 24)
         {
-            dt->hour -= 24;
-            dt->day += 1;
-            dt->wday = (dt->wday + 1) % 7;
+            dt->hour -= 24;                // Remise à zéro de l'heure
+            dt->day += 1;                  // Incrémentation du jour
+            dt->wday = (dt->wday + 1) % 7; // Incrémentation du jour de la semaine
 
             // Gestion du passage au mois suivant
             static const uint8_t days_in_month[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-            uint8_t max_days = days_in_month[dt->month];
+            uint8_t max_days = days_in_month[dt->month]; // Nombre de jours dans le mois courant
 
             // Ajustement pour février en année bissextile
-            if (dt->month == 2 && ((dt->year % 4 == 0 && dt->year % 100 != 0) || dt->year % 400 == 0))
+            if (dt->month == 2 && ((dt->year % 4 == 0 && dt->year % 100 != 0) || dt->year % 400 == 0)) // Vérifie si c'est une année bissextile
             {
-                max_days = 29;
+                max_days = 29; // Février a 29 jours en année bissextile
             }
 
-            if (dt->day > max_days)
+            if (dt->day > max_days) // Si on dépasse la fin du mois
             {
-                dt->day = 1;
-                dt->month += 1;
+                dt->day = 1;    // Premier jour du mois suivant
+                dt->month += 1; // Mois suivant
 
-                if (dt->month > 12)
+                if (dt->month > 12) // Si on dépasse décembre
                 {
-                    dt->month = 1;
-                    dt->year += 1;
+                    dt->month = 1; // Janvier
+                    dt->year += 1; // Année suivante
                 }
             }
         }
 
-        ESP01_LOG_DEBUG("NTP", "DST appliqué: %02d:xx -> %02d:xx", prev_hour, dt->hour);
-        dt->dst = true;
+        ESP01_LOG_DEBUG("NTP", "DST appliqué: %02d:xx -> %02d:xx", prev_hour, dt->hour); // Log du changement d'heure
+        dt->dst = true;                                                                  // Indique que le DST est appliqué
     }
-    else
+    else // Si le DST n'est pas actif
     {
-        ESP01_LOG_DEBUG("NTP", "DST non appliqué (heure d'hiver)");
-        dt->dst = false;
+        ESP01_LOG_DEBUG("NTP", "DST non appliqué (heure d'hiver)"); // Log si pas de DST
+        dt->dst = false;                                            // Indique que le DST n'est pas appliqué
     }
 }
 
 /* ==================== FONCTIONS ONE-SHOT SIMPLES ==================== */
 
 /**
- * @brief Fonction one-shot simple pour obtenir l'heure et l'afficher
- * @param lang Format de l'affichage ('F' pour français, 'E' pour anglais)
- * @return ESP01_OK si succès, code d'erreur sinon
+ * @brief Formate la dernière date/heure NTP reçue dans un buffer utilisateur (langue FR/EN ou brute)
+ * @param lang 'F' pour français, 'E' pour anglais, 0 ou '\0' pour la date brute.
+ * @param buffer Buffer de sortie (si NULL, ne fait que parser la date brute dans une structure temporaire)
+ * @param bufsize Taille du buffer
+ * @retval ESP01_OK si succès, ESP01_FAIL sinon
+ *
+ * Si buffer == NULL, la fonction ne fait que parser la date brute et retourne ESP01_OK si parsing réussi.
  */
-ESP01_Status_t esp01_ntp_get_and_display(char lang)
+ESP01_Status_t esp01_ntp_format_last_datetime(char lang, char *buffer, size_t bufsize)
 {
-    ESP01_LOG_INFO("NTP", "Récupération et affichage de l'heure NTP (lang=%c)", lang);
+    ntp_datetime_t dt;                               // Structure pour stocker la date parsée
+    const char *raw = esp01_ntp_get_last_datetime(); // Récupère la dernière date brute
 
-    char buffer[ESP01_NTP_DATETIME_BUF_SIZE];
-    ntp_datetime_t dt;
-    ESP01_Status_t status = esp01_get_ntp_time(buffer, sizeof(buffer));
-
-    if (status != ESP01_OK)
+    if (!raw || strlen(raw) == 0) // Vérifie la présence d'une date brute
     {
-        ESP01_LOG_ERROR("NTP", "Impossible de récupérer l'heure NTP");
-        ESP01_RETURN_ERROR("NTP_DISPLAY", status);
+        ESP01_LOG_WARN("NTP", "Aucune date NTP brute à formatter"); // Log warning si non dispo
+        return ESP01_FAIL;                                          // Retourne échec
     }
 
-    // Vérifier si la date est valide (pas une date proche de 1970)
-    if (!esp01_parse_ntp_datetime(buffer, &dt)) // Utiliser la fonction publique, pas la fonction statique
+    if (esp01_parse_ntp_esp01(raw, &dt) != ESP01_OK) // Parsing de la date brute
     {
-        ESP01_LOG_ERROR("NTP", "Impossible de parser la date NTP");
-        ESP01_RETURN_ERROR("NTP_DISPLAY", ESP01_NTP_INVALID_RESPONSE);
+        ESP01_LOG_ERROR("NTP", "Parsing de la date brute échoué"); // Log d'erreur si parsing échoué
+        return ESP01_FAIL;                                         // Retourne échec
     }
 
-    // Vérifier si la date est proche de 1970 (date non synchronisée)
-    if (dt.year < 2022)
+    // Appliquer DST si activé dans la config
+    if (g_ntp_config.dst_enable)
+        apply_dst(&dt); // Applique le DST si besoin
+
+    // Si lang == 0 ou lang == '\0', retourne la date brute (non formatée)
+    if (lang == 0)
     {
-        ESP01_LOG_WARN("NTP", "Date non synchronisée (%04d/%02d/%02d), serveur NTP probablement inaccessible",
-                       dt.year, dt.month, dt.day);
-        ESP01_RETURN_ERROR("NTP_DISPLAY", ESP01_NTP_SERVER_NOT_REACHABLE);
+        // Si buffer non NULL, on copie la chaîne brute
+        if (buffer && bufsize > 0)
+        {
+            strncpy(buffer, raw, bufsize - 1); // Copie sécurisée de la date brute
+            buffer[bufsize - 1] = '\0';        // Ajout du terminateur
+        }
+        return ESP01_OK; // Succès
     }
 
-    // Affichage selon la langue demandée
-    if (lang == 'F' || lang == 'f')
+    // Sinon, formatage FR/EN
+    if (!buffer || bufsize < ESP01_NTP_DATETIME_BUF_SIZE) // Vérifie la validité du buffer
+        return ESP01_INVALID_PARAM;                       // Retourne erreur paramètre
+
+    if (lang == 'F') // Format français
     {
-        esp01_print_datetime_fr(&dt);
+        ESP01_Status_t st = esp01_format_datetime_fr(&dt, buffer, bufsize); // Formate en français
+        ESP01_LOG_DEBUG("NTP", "Date formatée FR : %s", buffer);            // Log la date formatée FR
+        return st;                                                          // Retourne le statut
+    }
+    else if (lang == 'E') // Format anglais
+    {
+        ESP01_Status_t st = esp01_format_datetime_en(&dt, buffer, bufsize); // Formate en anglais
+        ESP01_LOG_DEBUG("NTP", "Date formatée EN : %s", buffer);            // Log la date formatée EN
+        return st;                                                          // Retourne le statut
     }
     else
     {
-        char formatted[128];
-        esp01_format_datetime_en(&dt, formatted, sizeof(formatted));
-        ESP01_LOG_INFO("NTP", "Date/time: %s", formatted);
+        ESP01_LOG_ERROR("NTP", "Langue non supportée : %c", lang); // Log d'erreur si langue invalide
+        return ESP01_INVALID_PARAM;                                // Retourne erreur paramètre
     }
-
-    // Mettre à jour la variable globale pour stocker la dernière date/heure
-    memcpy(&g_last_datetime, &dt, sizeof(ntp_datetime_t));
-
-    return ESP01_OK;
 }
-
-/**
- * @brief Formate une date au format français dans un buffer
- * @param dt Structure date/heure
- * @param buffer Buffer de sortie
- * @param size Taille du buffer
- * @return ESP01_OK si succès, code d'erreur sinon
- */
-ESP01_Status_t esp01_format_datetime_fr(const ntp_datetime_t *dt, char *buffer, size_t size)
-{
-    VALIDATE_PARAM(dt && buffer && size >= 40, ESP01_INVALID_PARAM);
-    VALIDATE_PARAM(dt->wday <= 6 && dt->month >= 1 && dt->month <= 12, ESP01_INVALID_PARAM);
-
-    static const char *jours_fr[] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
-    static const char *mois_fr[] = {"janvier", "février", "mars", "avril", "mai", "juin",
-                                    "juillet", "août", "septembre", "octobre", "novembre", "décembre"};
-
-    int written = snprintf(buffer, size, "%s %02d %s %04d à %02dh%02d:%02d%s",
-                           jours_fr[dt->wday], dt->day, mois_fr[dt->month - 1], dt->year,
-                           dt->hour, dt->min, dt->sec,
-                           dt->dst ? " (heure d'été)" : "");
-
-    if (written < 0 || written >= (int)size)
-    {
-        ESP01_LOG_ERROR("NTP", "Débordement du buffer lors du formatage de date (FR)");
-        return ESP01_BUFFER_OVERFLOW;
-    }
-
-    return ESP01_OK;
-}
-
-/**
- * @brief Formate une date au format anglais dans un buffer
- * @param dt Structure date/heure
- * @param buffer Buffer de sortie
- * @param size Taille du buffer
- * @return ESP01_OK si succès, code d'erreur sinon
- */
-ESP01_Status_t esp01_format_datetime_en(const ntp_datetime_t *dt, char *buffer, size_t size)
-{
-    VALIDATE_PARAM(dt && buffer && size >= 40, ESP01_INVALID_PARAM);
-    VALIDATE_PARAM(dt->wday <= 6 && dt->month >= 1 && dt->month <= 12, ESP01_INVALID_PARAM);
-
-    static const char *jours_en[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-    static const char *mois_en[] = {"January", "February", "March", "April", "May", "June",
-                                    "July", "August", "September", "October", "November", "December"};
-
-    // Conversion 24h vers 12h avec AM/PM
-    int hour_12 = dt->hour % 12;
-    if (hour_12 == 0)
-        hour_12 = 12; // 0h -> 12 AM, 12h -> 12 PM
-
-    const char *am_pm = (dt->hour < 12) ? "AM" : "PM";
-
-    int written = snprintf(buffer, size, "%s, %d %s, %04d %d:%02d:%02d %s%s",
-                           jours_en[dt->wday],
-                           dt->day, mois_en[dt->month - 1], dt->year,
-                           dt->hour, dt->min, dt->sec, am_pm,
-                           dt->dst ? " (DST)" : "");
-
-    if (written < 0 || written >= (int)size)
-    {
-        ESP01_LOG_ERROR("NTP", "Débordement du buffer lors du formatage de date (EN)");
-        return ESP01_BUFFER_OVERFLOW;
-    }
-
-    return ESP01_OK;
-}
-
 /* ==================== ACCÈS ET AFFICHAGE ==================== */
 
 /**
@@ -594,79 +567,70 @@ ESP01_Status_t esp01_format_datetime_en(const ntp_datetime_t *dt, char *buffer, 
  */
 void esp01_print_ntp_config(void)
 {
-    ESP01_LOG_INFO("NTP", "Affichage de la configuration NTP");                        // Log d'affichage
-    ESP01_LOG_INFO("NTP", "Serveur : %s", g_ntp_config.server);                        // Affichage du serveur
-    ESP01_LOG_INFO("NTP", "Fuseau horaire : %d", g_ntp_config.timezone);               // Affichage du fuseau horaire
-    ESP01_LOG_INFO("NTP", "Période de synchro (s) : %d", g_ntp_config.period_s);       // Affichage de la période
-    ESP01_LOG_INFO("NTP", "DST activé : %s", g_ntp_config.dst_enable ? "OUI" : "NON"); // Affichage de l'état DST
+    ESP01_LOG_DEBUG("NTP", "Affichage de la configuration NTP");                        // Log d'affichage
+    ESP01_LOG_DEBUG("NTP", "Serveur : %s", g_ntp_config.server);                        // Affichage du serveur
+    ESP01_LOG_DEBUG("NTP", "Fuseau horaire : %d", g_ntp_config.timezone);               // Affichage du fuseau horaire
+    ESP01_LOG_DEBUG("NTP", "Période de synchro (s) : %d", g_ntp_config.period_s);       // Affichage de la période
+    ESP01_LOG_DEBUG("NTP", "DST activé : %s", g_ntp_config.dst_enable ? "OUI" : "NON"); // Affichage de l'état DST
 }
 
 /**
- * @brief Affiche la dernière date/heure NTP reçue en français (logs).
+ * @brief Affiche la dernière date/heure NTP reçue formatée (FR ou EN) dans les logs.
+ * @param lang 'F' pour français, 'E' pour anglais (insensible à la casse).
+ * @retval ESP01_OK si succès, ESP01_FAIL ou ESP01_INVALID_PARAM sinon.
+ *
+ * Cette fonction parse la dernière date brute reçue, applique le DST si activé,
+ * puis formate et affiche la date dans la langue demandée via ESP01_LOG_DEBUG.
+ * Si la date n'est pas disponible ou invalide, un warning est loggué.
  */
-void esp01_ntp_print_last_datetime_fr(void)
+ESP01_Status_t esp01_ntp_print_last_datetime(char lang)
 {
-    const char *datetime_ntp = esp01_ntp_get_last_datetime(); // Récupération de la dernière date/heure
+    const char *datetime_ntp = esp01_ntp_get_last_datetime();                                                 // Récupère la dernière date brute
+    const char *msg_na = (lang == 'E' || lang == 'e') ? "NTP date not available" : "Date NTP non disponible"; // Message si non dispo
+    const char *msg_inv = (lang == 'E' || lang == 'e') ? "Invalid NTP date" : "Date NTP invalide";            // Message si invalide
 
-    if (!datetime_ntp || strlen(datetime_ntp) == 0) // Vérification de la disponibilité
+    if (!datetime_ntp || strlen(datetime_ntp) == 0) // Vérifie la présence d'une date
     {
-        ESP01_LOG_WARN("NTP", "Date NTP non disponible"); // Log d'avertissement
-        return;                                           // Sortie
+        ESP01_LOG_WARN("NTP", "%s", msg_na); // Log warning si non dispo
+        return ESP01_INVALID_PARAM;          // Retourne erreur paramètre
     }
 
-    ntp_datetime_t dt;
-    if (esp01_parse_ntp_esp01(datetime_ntp, &dt) == ESP01_OK) // Parsing de la date/heure
+    ntp_datetime_t dt; // Structure pour le parsing
+
+    if (esp01_parse_ntp_esp01(datetime_ntp, &dt) == ESP01_OK) // Parsing de la date brute
     {
-        // Appliquer DST si activé
-        if (g_ntp_config.dst_enable)
+        if (g_ntp_config.dst_enable) // Si DST activé dans la config
         {
-            apply_dst(&dt);
+            apply_dst(&dt); // Applique le DST
+            ESP01_LOG_DEBUG("NTP", "Date/heure après DST : %02d/%02d/%04d %02d:%02d:%02d (wday=%d, DST=%d)",
+                            dt.day, dt.month, dt.year, dt.hour, dt.min, dt.sec, dt.wday, dt.dst); // Log la date après DST
         }
 
-        char buffer[100] = {0};
-        if (esp01_format_datetime_fr(&dt, buffer, sizeof(buffer)) == ESP01_OK)
+        char buffer[100] = {0}; // Buffer pour la date formatée
+
+        if (lang == 'E' || lang == 'e') // Si anglais demandé
         {
-            ESP01_LOG_INFO("NTP", "%s", buffer);
+            if (esp01_format_datetime_en(&dt, buffer, sizeof(buffer)) == ESP01_OK) // Formate en anglais
+            {
+                ESP01_LOG_DEBUG("NTP", "%s", buffer); // Log la date formatée EN
+                return ESP01_OK;                      // Succès
+            }
         }
+        else // Sinon français par défaut
+        {
+            if (esp01_format_datetime_fr(&dt, buffer, sizeof(buffer)) == ESP01_OK) // Formate en français
+            {
+                ESP01_LOG_DEBUG("NTP", "%s", buffer); // Log la date formatée FR
+                return ESP01_OK;                      // Succès
+            }
+        }
+        ESP01_LOG_WARN("NTP", "%s", msg_inv); // Log warning si formatage échoué
+        return ESP01_FAIL;                    // Retourne échec
     }
     else
     {
-        ESP01_LOG_WARN("NTP", "Date NTP invalide"); // Log d'avertissement
-    }
-}
-
-/**
- * @brief Affiche la dernière date/heure NTP reçue en anglais (logs).
- */
-void esp01_ntp_print_last_datetime_en(void)
-{
-    ESP01_LOG_INFO("NTP", "Affichage de la dernière date/heure NTP (EN)"); // Log d'affichage
-    const char *datetime_ntp = esp01_ntp_get_last_datetime();              // Récupération de la dernière date/heure
-
-    if (!datetime_ntp || strlen(datetime_ntp) == 0) // Vérification de la disponibilité
-    {
-        ESP01_LOG_WARN("NTP", "NTP date not available"); // Log d'avertissement
-        return;                                          // Sortie
-    }
-
-    ntp_datetime_t dt;
-    if (esp01_parse_ntp_esp01(datetime_ntp, &dt) == ESP01_OK) // Parsing de la date/heure
-    {
-        // Appliquer DST si activé
-        if (g_ntp_config.dst_enable)
-        {
-            apply_dst(&dt);
-        }
-
-        char buffer[100] = {0};
-        if (esp01_format_datetime_en(&dt, buffer, sizeof(buffer)) == ESP01_OK)
-        {
-            ESP01_LOG_INFO("NTP", "%s", buffer);
-        }
-    }
-    else
-    {
-        ESP01_LOG_WARN("NTP", "Invalid NTP date"); // Log d'avertissement
+        ESP01_LOG_WARN("NTP", "%s", msg_inv); // Log warning si parsing échoué
+        return ESP01_FAIL;                    // Retourne échec
     }
 }
 
@@ -676,6 +640,7 @@ void esp01_ntp_print_last_datetime_en(void)
  */
 const char *esp01_ntp_get_last_datetime(void)
 {
+    ESP01_LOG_DEBUG("NTP", "Récupération de la dernière date/heure NTP brute");            // Log de récupération
     ESP01_LOG_DEBUG("NTP", "Lecture de la dernière date/heure NTP : %s", g_last_datetime); // Log de lecture
     return g_last_datetime;                                                                // Retourne la dernière date/heure
 }
@@ -695,8 +660,8 @@ uint8_t esp01_ntp_is_updated(void)
  */
 void esp01_ntp_clear_updated_flag(void)
 {
-    ESP01_LOG_INFO("NTP", "Réinitialisation du flag de mise à jour NTP"); // Log de réinitialisation
-    g_ntp_updated = 0;                                                    // Réinitialisation du flag
+    ESP01_LOG_DEBUG("NTP", "Réinitialisation du flag de mise à jour NTP"); // Log de réinitialisation
+    g_ntp_updated = 0;                                                     // Réinitialisation du flag
 }
 
 /**
@@ -795,22 +760,14 @@ ESP01_Status_t esp01_parse_ntp_esp01(const char *datetime_ntp, ntp_datetime_t *d
  */
 void esp01_print_datetime_fr(const ntp_datetime_t *dt)
 {
-    VALIDATE_PARAM_VOID(dt);
-
-    if (dt->wday > 6 || dt->month < 1 || dt->month > 12)
-    {
-        ESP01_LOG_ERROR("NTP", "Structure de date invalide (jour=%d, mois=%d)", dt->wday, dt->month);
+    VALIDATE_PARAM_VOID(dt);                             // Vérifie la validité du pointeur
+    if (dt->wday > 6 || dt->month < 1 || dt->month > 12) // Vérifie la validité des champs
         return;
-    }
-
-    static const char *jours_fr[] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
-    static const char *mois_fr[] = {"janvier", "février", "mars", "avril", "mai", "juin",
-                                    "juillet", "août", "septembre", "octobre", "novembre", "décembre"};
-
-    ESP01_LOG_INFO("NTP", "%s %02d %s %04d à %02dh%02d:%02d%s",
-                   jours_fr[dt->wday], dt->day, mois_fr[dt->month - 1], dt->year,
-                   dt->hour, dt->min, dt->sec,
-                   dt->dst ? " (heure d'été)" : "");
+    static const char *jours_fr[] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};                                                // Tableau des jours
+    static const char *mois_fr[] = {"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"}; // Tableau des mois
+    ESP01_LOG_DEBUG("NTP", "%s %02d %s %04d à %02dh%02d:%02d%s",
+                    jours_fr[dt->wday], dt->day, mois_fr[dt->month - 1], dt->year,
+                    dt->hour, dt->min, dt->sec, dt->dst ? " (heure d'été)" : ""); // Affiche la date/heure formatée FR
 }
 
 /**
@@ -819,111 +776,151 @@ void esp01_print_datetime_fr(const ntp_datetime_t *dt)
  */
 void esp01_print_datetime_en(const ntp_datetime_t *dt)
 {
-    VALIDATE_PARAM_VOID(dt);
-    VALIDATE_PARAM_VOID(dt->wday <= 6 && dt->month >= 1 && dt->month <= 12);
-
-    static const char *jours_en[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-    static const char *mois_en[] = {"January", "February", "March", "April", "May", "June",
-                                    "July", "August", "September", "October", "November", "December"};
-
-    ESP01_LOG_INFO("NTP", "%s, %02d %s %04d %02d:%02d:%02d%s",
-                   jours_en[dt->wday], dt->day, mois_en[dt->month - 1], dt->year,
-                   dt->hour, dt->min, dt->sec,
-                   dt->dst ? " (DST)" : "");
+    VALIDATE_PARAMS_VOID(dt && dt->wday <= 6 && dt->month >= 1 && dt->month <= 12);                                                                            // Vérifie la validité des champs
+    static const char *jours_en[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};                                            // Tableau des jours
+    static const char *mois_en[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}; // Tableau des mois
+    int hour12 = dt->hour % 12;                                                                                                                                // Conversion en format 12h
+    if (hour12 == 0)                                                                                                                                           // Si l'heure est 0h, on la convertit en 12h
+        hour12 = 12;                                                                                                                                           // 12h pour le format 12h
+    const char *ampm = (dt->hour < 12) ? "AM" : "PM";                                                                                                          // AM/PM
+    ESP01_LOG_DEBUG("NTP", "%s, %02d %s %04d %02d:%02d:%02d %s%s",
+                    jours_en[dt->wday], dt->day, mois_en[dt->month - 1], dt->year,
+                    hour12, dt->min, dt->sec, ampm, dt->dst ? " (DST)" : ""); // Affiche la date/heure formatée EN
 }
 
 /**
- * @brief Parse une chaîne de date/heure au format NTP de l'ESP01
- * @param datetime_str Chaîne de date/heure à parser
- * @param dt Structure de sortie
- * @return true si parsing réussi, false sinon
+ * @brief Formate une structure date/heure en français.
+ * @param dt Structure à formater.
+ * @param buffer Buffer de sortie.
+ * @param size Taille du buffer.
+ * @retval ESP01_OK si succès, ESP01_FAIL sinon.
  */
+ESP01_Status_t esp01_format_datetime_fr(const ntp_datetime_t *dt, char *buffer, size_t size)
+{
+    VALIDATE_PARAM(dt && buffer && size >= ESP01_NTP_DATETIME_BUF_SIZE, ESP01_INVALID_PARAM);                                                                 // Vérifie la validité des paramètres
+    static const char *jours_fr[] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};                                                // Tableau des jours
+    static const char *mois_fr[] = {"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"}; // Tableau des mois
+    if (dt->wday > 6 || dt->month < 1 || dt->month > 12)                                                                                                      // Vérifie la validité des champs
+        return ESP01_FAIL;
+    int n = snprintf(buffer, size, "%s %02d %s %04d à %02dh%02d:%02d%s",
+                     jours_fr[dt->wday], dt->day, mois_fr[dt->month - 1], dt->year,
+                     dt->hour, dt->min, dt->sec, dt->dst ? " (heure d'été)" : ""); // Formate la date/heure FR
+    return (n > 0 && (size_t)n < size) ? ESP01_OK : ESP01_FAIL;                    // Retourne le statut
+}
+
+/**
+ * @brief Formate une structure date/heure en anglais.
+ * @param dt Structure à formater.
+ * @param buffer Buffer de sortie.
+ * @param size Taille du buffer.
+ * @retval ESP01_OK si succès, ESP01_FAIL sinon.
+ */
+ESP01_Status_t esp01_format_datetime_en(const ntp_datetime_t *dt, char *buffer, size_t size)
+{
+    VALIDATE_PARAM(dt && buffer && size >= ESP01_NTP_DATETIME_BUF_SIZE, ESP01_INVALID_PARAM);                                                                  // Vérifie la validité des paramètres
+    static const char *jours_en[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};                                            // Tableau des jours
+    static const char *mois_en[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}; // Tableau des mois
+    if (dt->wday > 6 || dt->month < 1 || dt->month > 12)                                                                                                       // Vérifie la validité des champs
+        return ESP01_FAIL;
+    int hour12 = dt->hour % 12; // Conversion en format 12h
+    if (hour12 == 0)
+        hour12 = 12;
+    const char *ampm = (dt->hour < 12) ? "AM" : "PM"; // AM/PM
+    int n = snprintf(buffer, size, "%s, %02d %s %04d %02d:%02d:%02d %s%s",
+                     jours_en[dt->wday], dt->day, mois_en[dt->month - 1], dt->year,
+                     hour12, dt->min, dt->sec, ampm, dt->dst ? " (DST)" : ""); // Formate la date/heure EN
+    return (n > 0 && (size_t)n < size) ? ESP01_OK : ESP01_FAIL;                // Retourne le statut
+}
+
 bool esp01_parse_ntp_datetime(const char *datetime_str, ntp_datetime_t *dt)
 {
-    ESP01_LOG_DEBUG("NTP", "Parsing de la date NTP : %s", datetime_str);
-    VALIDATE_PARAM(datetime_str && dt, false);
-
+    VALIDATE_PARAM(datetime_str && dt, false); // Vérifie la validité des paramètres
     // Format attendu: "Thu Jun 19 11:41:56 2025"
-    char day_str[4], month_str[4];
-    int day, hour, min, sec, year;
-
+    char day_str[4], month_str[4]; // Buffers pour le jour et le mois
+    int day, hour, min, sec, year; // Variables pour les valeurs entières
     int matched = sscanf(datetime_str, "%3s %3s %d %d:%d:%d %d",
-                         day_str, month_str, &day, &hour, &min, &sec, &year);
+                         day_str, month_str, &day, &hour, &min, &sec, &year); // Parsing de la chaîne
+    if (matched != 7)                                                         // Vérifie si tous les champs ont été correctement extraits
+        return false;                                                         // Retourne faux si le format est incorrect
+    dt->day = day;                                                            // Affecte le jour
+    dt->hour = hour;                                                          // Affecte l'heure
+    dt->min = min;                                                            // Affecte les minutes
+    dt->sec = sec;                                                            // Affecte les secondes
+    dt->year = year;                                                          // Affecte l'année
+    // Mois
+    if (strncmp(month_str, "Jan", 3) == 0)      // Compare les 3 premiers caractères du mois
+        dt->month = 1;                          // Affectation du mois
+    else if (strncmp(month_str, "Feb", 3) == 0) // Compare pour février
+        dt->month = 2;                          // Affectation du mois
+    else if (strncmp(month_str, "Mar", 3) == 0) // Compare pour mars
+        dt->month = 3;                          // Affectation du mois
+    else if (strncmp(month_str, "Apr", 3) == 0) // Compare pour avril
+        dt->month = 4;                          // Affectation du mois
+    else if (strncmp(month_str, "May", 3) == 0) // Compare pour mai
+        dt->month = 5;                          // Affectation du mois
+    else if (strncmp(month_str, "Jun", 3) == 0) // Compare pour juin
+        dt->month = 6;                          // Affectation du mois
+    else if (strncmp(month_str, "Jul", 3) == 0) // Sinon si Juillet
+        dt->month = 7;                          // Affecte 7
+    else if (strncmp(month_str, "Aug", 3) == 0) // Sinon si Août
+        dt->month = 8;                          // Affecte 8
+    else if (strncmp(month_str, "Sep", 3) == 0) // Sinon si Septembre
+        dt->month = 9;                          // Affecte 9
+    else if (strncmp(month_str, "Oct", 3) == 0) // Sinon si Octobre
+        dt->month = 10;                         // Affecte 10
+    else if (strncmp(month_str, "Nov", 3) == 0) // Sinon si Novembre
+        dt->month = 11;                         // Affecte 11
+    else if (strncmp(month_str, "Dec", 3) == 0) // Sinon si Décembre
+        dt->month = 12;                         // Affecte 12
+    else                                        // Sinon (mois inconnu)
+        return false;                           // Retourne faux
 
-    if (matched != 7)
-    {
-        ESP01_LOG_ERROR("NTP", "Format de date invalide: %s", datetime_str);
-        return false;
-    }
+    // Conversion du jour texte vers numéro
+    if (strncmp(day_str, "Sun", 3) == 0)      // Si le jour est Sunday
+        dt->wday = 0;                         // Affecte 0
+    else if (strncmp(day_str, "Mon", 3) == 0) // Sinon si Monday
+        dt->wday = 1;                         // Affecte 1
+    else if (strncmp(day_str, "Tue", 3) == 0) // Sinon si Tuesday
+        dt->wday = 2;                         // Affecte 2
+    else if (strncmp(day_str, "Wed", 3) == 0) // Sinon si Wednesday
+        dt->wday = 3;                         // Affecte 3
+    else if (strncmp(day_str, "Thu", 3) == 0) // Sinon si Thursday
+        dt->wday = 4;                         // Affecte 4
+    else if (strncmp(day_str, "Fri", 3) == 0) // Sinon si Friday
+        dt->wday = 5;                         // Affecte 5
+    else if (strncmp(day_str, "Sat", 3) == 0) // Sinon si Saturday
+        dt->wday = 6;                         // Affecte 6
+    else                                      // Sinon (jour inconnu)
+        return false;                         // Retourne faux
 
-    // Remplit la structure avec les valeurs extraites
-    dt->day = day;
-    dt->hour = hour;
-    dt->min = min;
-    dt->sec = sec;
-    dt->year = year;
-
-    // Traduit le mois textuel en numérique
-    if (strncmp(month_str, "Jan", 3) == 0)
-        dt->month = 1;
-    else if (strncmp(month_str, "Feb", 3) == 0)
-        dt->month = 2;
-    else if (strncmp(month_str, "Mar", 3) == 0)
-        dt->month = 3;
-    else if (strncmp(month_str, "Apr", 3) == 0)
-        dt->month = 4;
-    else if (strncmp(month_str, "May", 3) == 0)
-        dt->month = 5;
-    else if (strncmp(month_str, "Jun", 3) == 0)
-        dt->month = 6;
-    else if (strncmp(month_str, "Jul", 3) == 0)
-        dt->month = 7;
-    else if (strncmp(month_str, "Aug", 3) == 0)
-        dt->month = 8;
-    else if (strncmp(month_str, "Sep", 3) == 0)
-        dt->month = 9;
-    else if (strncmp(month_str, "Oct", 3) == 0)
-        dt->month = 10;
-    else if (strncmp(month_str, "Nov", 3) == 0)
-        dt->month = 11;
-    else if (strncmp(month_str, "Dec", 3) == 0)
-        dt->month = 12;
-    else
-    {
-        ESP01_LOG_ERROR("NTP", "Mois invalide: %s", month_str);
-        return false;
-    }
-
-    // Traduit le jour textuel en numérique (0=dimanche, 1=lundi, ..., 6=samedi)
-    if (strncmp(day_str, "Sun", 3) == 0)
-        dt->wday = 0;
-    else if (strncmp(day_str, "Mon", 3) == 0)
-        dt->wday = 1;
-    else if (strncmp(day_str, "Tue", 3) == 0)
-        dt->wday = 2;
-    else if (strncmp(day_str, "Wed", 3) == 0)
-        dt->wday = 3;
-    else if (strncmp(day_str, "Thu", 3) == 0)
-        dt->wday = 4;
-    else if (strncmp(day_str, "Fri", 3) == 0)
-        dt->wday = 5;
-    else if (strncmp(day_str, "Sat", 3) == 0)
-        dt->wday = 6;
-    else
-    {
-        ESP01_LOG_ERROR("NTP", "Jour invalide: %s", day_str);
-        return false;
-    }
-
-    ESP01_LOG_DEBUG("NTP", "Parsing réussi : %02d/%02d/%04d %02d:%02d:%02d (wday=%d)",
-                    dt->day, dt->month, dt->year, dt->hour, dt->min, dt->sec, dt->wday);
-
-    // Vérification supplémentaire : si année = 1970, c'est probablement une date non synchronisée
-    if (dt->year == 1970)
-    {
-        ESP01_LOG_WARN("NTP", "Date de l'époque Unix détectée (%04d/%02d/%02d), serveur NTP probablement inaccessible",
-                       dt->year, dt->month, dt->day);
-    }
-
-    return true;
+    dt->dst = false; // Initialisation du flag DST à false (sera mis à jour plus tard)
+    return true;     // Parsing réussi
 }
+
+/**
+ * @brief Récupère la dernière date/heure NTP dans une structure.
+ * @param dt Pointeur vers la structure de date/heure à remplir.
+ * @return ESP01_OK si succès, ESP01_INVALID_PARAM si pointeur NULL, ESP01_FAIL si aucune date disponible.
+ */
+ESP01_Status_t esp01_ntp_get_last_datetime_struct(ntp_datetime_t *dt)
+{
+    if (!g_initialized) // Vérifie si le module NTP est initialisé
+    {
+        ESP01_LOG_DEBUG("NTP", "Demande de date NTP ignorée (synchro périodique non active)"); // Log si pas de synchro périodique
+        return ESP01_OK;                                                                       // Retourne OK si pas de synchro périodique
+    }
+    if (!dt) // Vérifie si le pointeur de structure est valide
+    {
+        ESP01_LOG_ERROR("NTP", "Pointeur de structure date/heure NULL"); // Log d'erreur si pointeur invalide
+        return ESP01_INVALID_PARAM;                                      // Retourne erreur si pointeur invalide
+    }
+    const char *datetime_ntp = esp01_ntp_get_last_datetime(); // Récupère la dernière date brute NTP
+    if (!datetime_ntp || strlen(datetime_ntp) == 0)           // Vérifie si la date brute est disponible
+    {
+        ESP01_LOG_WARN("NTP", "Aucune date NTP disponible"); // Log warning si non dispo
+        return ESP01_FAIL;                                   // Retourne échec si pas de date
+    }
+    return esp01_parse_ntp_esp01(datetime_ntp, dt); // Parse la date brute dans la structure fournie
+}
+
+// ========================= FIN DU MODULE =========================

@@ -21,30 +21,30 @@
 #define STM32_WIFIESP_HTTP_H_
 
 /* ========================== INCLUDES ========================== */
-#include "STM32_WifiESP.h"      ///< Driver bas niveau requis
-#include "STM32_WifiESP_WIFI.h" ///< Module WiFi haut niveau requis
-#include <stdbool.h>            ///< Types booléens
-#include <stdint.h>             ///< Types entiers standard
+#include "STM32_WifiESP.h"      // Driver bas niveau requis
+#include "STM32_WifiESP_WIFI.h" // Module WiFi haut niveau requis
+#include <stdbool.h>            // Types booléens
+#include <stdint.h>             // Types entiers standard
 
 /* ========================== DEFINES =========================== */
 
 // --- Limites et tailles ---
-#define ESP01_MAX_HTTP_METHOD_LEN 8 ///< Longueur max du verbe HTTP (GET, POST, etc.)
-#define ESP01_MAX_HTTP_PATH_LEN 64  ///< Longueur max du chemin d'une route
-#define ESP01_MAX_HTTP_QUERY_LEN 64 ///< Longueur max de la query string
-#define ESP01_MAX_ROUTES 8          ///< Nombre max de routes HTTP
-#define ESP01_MAX_CONNECTIONS 4     ///< Nombre max de connexions HTTP simultanées
-#define ESP01_MAX_HEADER_LINE 256   ///< Taille max d'une ligne d'en-tête HTTP
-#define ESP01_MAX_TOTAL_HTTP 2048   ///< Taille max du buffer accumulateur HTTP
-#define ESP01_MAX_CIPSEND_BUF 64    ///< Taille max du buffer pour CIPSEND
-#define ESP01_MAX_HTTP_REQ_BUF 256  ///< Taille max du buffer de requête HTTP
-#define ESP01_MULTI_CONNECTION 1    ///< Mode multi-connexion activé
+#define ESP01_MAX_HTTP_METHOD_LEN 8 // Longueur max du verbe HTTP (GET, POST, etc.)
+#define ESP01_MAX_HTTP_PATH_LEN 64  // Longueur max du chemin d'une route
+#define ESP01_MAX_HTTP_QUERY_LEN 64 // Longueur max de la query string
+#define ESP01_MAX_ROUTES 8          // Nombre max de routes HTTP
+#define ESP01_MAX_CONNECTIONS 4     // Nombre max de connexions HTTP simultanées
+#define ESP01_MAX_HEADER_LINE 256   // Taille max d'une ligne d'en-tête HTTP
+#define ESP01_MAX_TOTAL_HTTP 2048   // Taille max du buffer accumulateur HTTP
+#define ESP01_MAX_CIPSEND_BUF 64    // Taille max du buffer pour CIPSEND
+#define ESP01_MAX_HTTP_REQ_BUF 256  // Taille max du buffer de requête HTTP
+#define ESP01_MULTI_CONNECTION 1    // Mode multi-connexion activé
 
 // --- Codes HTTP ---
-#define ESP01_HTTP_OK_CODE 200                                                 ///< Code HTTP 200 OK
-#define ESP01_HTTP_NOT_FOUND_CODE 404                                          ///< Code HTTP 404 Not Found
-#define ESP01_HTTP_INTERNAL_ERR_CODE 500                                       ///< Code HTTP 500 Internal Server Error
-#define ESP01_HTTP_404_BODY "<html><body><h1>404 Not Found</h1></body></html>" ///< Corps HTML pour 404
+#define ESP01_HTTP_OK_CODE 200                                                 // Code HTTP 200 OK
+#define ESP01_HTTP_NOT_FOUND_CODE 404                                          // Code HTTP 404 Not Found
+#define ESP01_HTTP_INTERNAL_ERR_CODE 500                                       // Code HTTP 500 Internal Server Error
+#define ESP01_HTTP_404_BODY "<html><body><h1>404 Not Found</h1></body></html>" // Corps HTML pour 404
 
 /* ========================== STRUCTURES ======================== */
 
@@ -53,11 +53,10 @@
  */
 typedef struct
 {
-    char method[ESP01_MAX_HTTP_METHOD_LEN];      ///< Verbe HTTP (GET, POST, etc.)
-    char path[ESP01_MAX_HTTP_PATH_LEN];          ///< Chemin de la requête
-    char query_string[ESP01_MAX_HTTP_QUERY_LEN]; ///< Query string extraite
-    char headers_buf[512];                       ///< Buffer pour les en-têtes HTTP
-    bool is_valid;                               ///< Indique si la requête est valide
+    char method[ESP01_MAX_HTTP_METHOD_LEN];      // Verbe HTTP (GET, POST, etc.)
+    char path[ESP01_MAX_HTTP_PATH_LEN];          // Chemin de la requête
+    char query_string[ESP01_MAX_HTTP_QUERY_LEN]; // Query string extraite
+    bool is_valid;                               // Indique si la requête est valide
 } http_parsed_request_t;
 
 /**
@@ -70,8 +69,8 @@ typedef void (*esp01_route_handler_t)(int conn_id, const http_parsed_request_t *
  */
 typedef struct
 {
-    char path[ESP01_MAX_HTTP_PATH_LEN]; ///< Chemin de la route
-    esp01_route_handler_t handler;      ///< Pointeur vers la fonction handler
+    char path[ESP01_MAX_HTTP_PATH_LEN]; // Chemin de la route
+    esp01_route_handler_t handler;      // Pointeur vers la fonction handler
 } esp01_route_t;
 
 /**
@@ -79,13 +78,11 @@ typedef struct
  */
 typedef struct
 {
-    int conn_id;                      ///< Identifiant de connexion
-    uint32_t last_activity;           ///< Timestamp de la dernière activité
-    bool is_active;                   ///< Etat actif/inactif
-    char client_ip[ESP01_MAX_IP_LEN]; ///< Adresse IP du client
-    uint16_t server_port;             ///< Port du serveur
-    uint16_t client_port;             ///< Port du client
-    uint32_t closed_at;               ///< Timestamp de fermeture
+    int conn_id;                      // Identifiant de connexion
+    uint32_t last_activity;           // Timestamp de la dernière activité
+    bool is_active;                   // Etat actif/inactif
+    char client_ip[ESP01_MAX_IP_LEN]; // Adresse IP du client
+    uint16_t client_port;             // Port du client
 } connection_info_t;
 
 /**
@@ -93,13 +90,12 @@ typedef struct
  */
 typedef struct
 {
-    int conn_id;                      ///< Identifiant de connexion
-    int content_length;               ///< Longueur du contenu
-    bool is_valid;                    ///< Indique si la requête est valide
-    bool is_http_request;             ///< Indique si c'est une requête HTTP
-    char client_ip[ESP01_MAX_IP_LEN]; ///< Adresse IP du client
-    int client_port;                  ///< Port du client
-    bool has_ip;                      ///< Indique si l'IP est connue
+    int conn_id;                      // Identifiant de connexion
+    int content_length;               // Longueur du contenu
+    bool is_valid;                    // Indique si la requête est valide
+    char client_ip[ESP01_MAX_IP_LEN]; // Adresse IP du client
+    int client_port;                  // Port du client
+    bool has_ip;                      // Indique si l'IP est connue
 } http_request_t;
 
 /**
@@ -107,24 +103,24 @@ typedef struct
  */
 typedef struct
 {
-    uint32_t total_requests;         ///< Nombre total de requêtes reçues
-    uint32_t response_count;         ///< Nombre total de réponses envoyées
-    uint32_t successful_responses;   ///< Nombre de réponses avec succès
-    uint32_t failed_responses;       ///< Nombre de réponses en erreur
-    uint32_t total_response_time_ms; ///< Temps total de réponse (ms)
-    uint32_t avg_response_time_ms;   ///< Temps de réponse moyen (ms)
+    uint32_t total_requests;         // Nombre total de requêtes reçues
+    uint32_t response_count;         // Nombre total de réponses envoyées
+    uint32_t successful_responses;   // Nombre de réponses avec succès
+    uint32_t failed_responses;       // Nombre de réponses en erreur
+    uint32_t total_response_time_ms; // Temps total de réponse (ms)
+    uint32_t avg_response_time_ms;   // Temps de réponse moyen (ms)
 } esp01_stats_t;
 
 /* ========================= VARIABLES GLOBALES ========================= */
 
-extern esp01_route_t g_routes[ESP01_MAX_ROUTES];               ///< Tableau des routes HTTP
-extern int g_route_count;                                      ///< Nombre de routes enregistrées
-extern connection_info_t g_connections[ESP01_MAX_CONNECTIONS]; ///< Tableau des connexions actives
-extern int g_connection_count;                                 ///< Nombre de connexions actives
-extern volatile int g_acc_len;                                 ///< Longueur du buffer accumulateur
-extern char g_accumulator[ESP01_MAX_TOTAL_HTTP];               ///< Buffer accumulateur pour les requêtes
-extern volatile int g_processing_request;                      ///< Flag de traitement de requête en cours
-extern esp01_stats_t g_stats;                                  ///< Statistiques HTTP
+extern esp01_route_t g_routes[ESP01_MAX_ROUTES];               // Tableau des routes HTTP
+extern int g_route_count;                                      // Nombre de routes enregistrées
+extern connection_info_t g_connections[ESP01_MAX_CONNECTIONS]; // Tableau des connexions actives
+extern int g_connection_count;                                 // Nombre de connexions actives
+extern volatile int g_acc_len;                                 // Longueur du buffer accumulateur
+extern char g_accumulator[ESP01_MAX_TOTAL_HTTP];               // Buffer accumulateur pour les requêtes
+extern volatile int g_processing_request;                      // Flag de traitement de requête en cours
+extern esp01_stats_t g_stats;                                  // Statistiques HTTP
 
 /* ========================= PROTOTYPES FONCTIONS ======================= */
 

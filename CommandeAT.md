@@ -1,4 +1,4 @@
-# Documentation des commandes AT – Firmware Cyprus (ESP01/ESP8266)
+# Documentation des commandes AT – Firmware Cyprus (ESP|| ATE1             |   0    |  0  |  0  |  1  | Active l'écho des commandes AT    |ATE0             |   0    |  0  |  0  |  1  | Désactive l'écho des commandes AT |1/ESP8266)
 
 ## À propos
 
@@ -52,39 +52,39 @@ La commande `AT+CMD?` retourne la liste des commandes AT supportées, sous la fo
 
 | Commande         | Global | Get | Set | Exe | Description                       |
 |------------------|--------|-----|-----|-----|-----------------------------------|
-| AT               |   0    |  0  |  0  |  1  | Test de communication             |
+| AT               |   0    |  0  |  0  |  1  | Tests la communication AT        |
 | ATE0             |   0    |  0  |  0  |  1  | Désactive l’echo                  |
 | ATE1             |   0    |  0  |  0  |  1  | Active l’echo                     |
-| AT+RST           |   0    |  0  |  0  |  1  | Redémarrage logiciel              |
-| AT+GMR           |   0    |  0  |  0  |  1  | Version du firmware               |
-| AT+CMD           |   0    |  1  |  0  |  0  | Liste des commandes AT            |
-| AT+GSLP          |   0    |  0  |  1  |  0  | Deep sleep                        |
-| AT+SYSTIMESTAMP  |   0    |  1  |  1  |  0  | Timestamp système                 |
-| AT+SLEEP         |   0    |  1  |  1  |  0  | Mode sommeil                      |
-| AT+RESTORE       |   0    |  0  |  0  |  1  | Restauration usine                |
-| AT+SYSRAM        |   0    |  1  |  0  |  0  | RAM libre                         |
-| AT+SYSFLASH      |   0    |  1  |  1  |  0  | Infos flash                       |
-| AT+RFPOWER       |   0    |  1  |  1  |  0  | Puissance RF                      |
-| AT+SYSMSG        |   0    |  1  |  1  |  0  | Messages système                  |
-| AT+SYSROLLBACK   |   0    |  0  |  0  |  1  | Rollback système                  |
-| AT+SYSLOG        |   0    |  1  |  1  |  0  | Niveau de log système             |
-| AT+SYSSTORE      |   0    |  1  |  1  |  0  | Stockage système                  |
-| AT+SLEEPWKCFG    |   0    |  0  |  1  |  0  | Config réveil sommeil             |
-| AT+SYSREG        |   0    |  0  |  1  |  0  | Registres système                 |
-| AT+USERRAM       |   0    |  1  |  1  |  0  | RAM utilisateur                   |
+| AT+RST           |   0    |  0  |  0  |  1  | Redémarre le module               |
+| AT+GMR           |   0    |  0  |  0  |  1  | Interroge les informations de version |
+| AT+CMD           |   0    |  1  |  0  |  0  | Interroge les commandes AT supportées |
+| AT+GSLP          |   0    |  0  |  1  |  0  | Entre en mode deep sleep          |
+| AT+SYSTIMESTAMP  |   0    |  1  |  1  |  0  | Interroge/configure l'horodatage système |
+| AT+SLEEP         |   0    |  1  |  1  |  0  | Interroge/configure le mode de sommeil |
+| AT+RESTORE       |   0    |  0  |  0  |  1  | Restaure les paramètres par défaut |
+| AT+SYSRAM        |   0    |  1  |  0  |  0  | Interroge l'utilisation actuelle de la RAM |
+| AT+SYSFLASH      |   0    |  1  |  1  |  0  | Interroge/configure les paramètres de partition flash utilisateur |
+| AT+RFPOWER       |   0    |  1  |  1  |  0  | Interroge/configure la puissance RF maximum |
+| AT+SYSMSG        |   0    |  1  |  1  |  0  | Interroge/configure l'affichage des messages système |
+| AT+SYSROLLBACK   |   0    |  0  |  0  |  1  | Fait un rollback vers la version précédente du firmware |
+| AT+SYSLOG        |   0    |  1  |  1  |  0  | Active/configure les journaux de débogage AT |
+| AT+SYSSTORE      |   0    |  1  |  1  |  0  | Interroge/configure le mode de stockage des paramètres |
+| AT+SLEEPWKCFG    |   0    |  0  |  1  |  0  | Configure les sources de réveil du sleep |
+| AT+SYSREG        |   0    |  0  |  1  |  0  | Lit/écrit les registres du système |
+| AT+USERRAM       |   0    |  1  |  1  |  0  | Opère sur la RAM utilisateur      |
 
 ### Commandes WiFi
 
 | Commande        | Global | Get | Set | Exe | Description                       |
 |-----------------|--------|-----|-----|-----|-----------------------------------|
-| AT+CWMODE       |   0    |  1  |  1  |  0  | Mode WiFi                         |
+| AT+CWMODE       |   0    |  1  |  1  |  0  | Interroge/configure le mode WiFi  |
 | AT+CWSTATE      |   0    |  0  |  1  |  0  | État WiFi                         |
-| AT+CWJAP        |   0    |  1  |  1  |  1  | Connexion à un réseau WiFi        |
+| AT+CWJAP        |   0    |  1  |  1  |  1  | Se connecte à un point d'accès    |
 | AT+CWRECONNCFG  |   0    |  1  |  1  |  0  | Config reconnexion WiFi           |
-| AT+CWLAP        |   0    |  0  |  1  |  1  | Scan des réseaux WiFi             |
+| AT+CWLAP        |   0    |  0  |  1  |  1  | Liste les points d'accès disponibles |
 | AT+CWLAPOPT     |   0    |  0  |  1  |  0  | Options scan WiFi                 |
-| AT+CWQAP        |   0    |  0  |  0  |  1  | Déconnexion AP                    |
-| AT+CWSAP        |   0    |  1  |  1  |  0  | Config AP WiFi                    |
+| AT+CWQAP        |   0    |  0  |  0  |  1  | Se déconnecte du point d'accès    |
+| AT+CWSAP        |   0    |  1  |  1  |  0  | Interroge/configure le point d'accès |
 | AT+CWLIF        |   0    |  0  |  0  |  1  | Liste IP clients AP               |
 | AT+CWQIF        |   0    |  1  |  0  |  1  | Déconnexion client WiFi           |
 | AT+CWDHCP       |   0    |  1  |  1  |  0  | DHCP WiFi                         |
@@ -102,8 +102,8 @@ La commande `AT+CMD?` retourne la liste des commandes AT supportées, sous la fo
 
 | Commande           | Global | Get | Set | Exe | Description                       |
 |--------------------|--------|-----|-----|-----|-----------------------------------|
-| AT+CIFSR           |   0    |  0  |  0  |  1  | Adresse IP                        |
-| AT+CIPSTAMAC       |   0    |  1  |  1  |  0  | MAC station                       |
+| AT+CIFSR           |   0    |  0  |  0  |  1  | Obtient l'adresse IP locale       |
+| AT+CIPSTAMAC       |   0    |  1  |  1  |  0  | Interroge/configure l'adresse MAC de station |
 | AT+CIPAPMAC        |   0    |  1  |  1  |  0  | MAC AP                            |
 | AT+CIPSTA          |   0    |  1  |  1  |  0  | IP station                        |
 | AT+CIPAP           |   0    |  1  |  1  |  0  | IP AP                             |
@@ -111,11 +111,11 @@ La commande `AT+CMD?` retourne la liste des commandes AT supportées, sous la fo
 | AT+CIPDNS          |   0    |  1  |  1  |  0  | DNS                               |
 | AT+CIPDOMAIN       |   0    |  1  |  0  |  0  | Résolution DNS                    |
 | AT+CIPSTATUS       |   0    |  0  |  0  |  1  | Statut IP                         |
-| AT+CIPSTART        |   0    |  1  |  0  |  0  | Démarrer une connexion TCP/UDP    |
+| AT+CIPSTART        |   0    |  1  |  0  |  0  | Établit une connexion TCP/UDP/SSL |
 | AT+CIPSTARTEX      |   0    |  1  |  0  |  0  | Démarrer une connexion TCP/UDP avancée |
 | AT+CIPTCPOPT       |   0    |  1  |  1  |  0  | Options TCP                       |
-| AT+CIPCLOSE        |   0    |  1  |  0  |  1  | Fermer une connexion              |
-| AT+CIPSEND         |   0    |  1  |  0  |  1  | Envoyer des données               |
+| AT+CIPCLOSE        |   0    |  1  |  0  |  1  | Ferme la connexion TCP/UDP/SSL    |
+| AT+CIPSEND         |   0    |  1  |  0  |  1  | Envoie des données                |
 | AT+CIPSENDEX       |   0    |  1  |  0  |  0  | Envoyer des données avancé        |
 | AT+CIPDINFO        |   0    |  1  |  1  |  0  | Infos données reçues              |
 | AT+CIPMUX          |   0    |  1  |  1  |  0  | Mode multi-connexion              |
@@ -147,7 +147,7 @@ La commande `AT+CMD?` retourne la liste des commandes AT supportées, sous la fo
 | AT+MQTTPASSWORD  |   0    |  1  |  0  |  0  | Password MQTT                     |
 | AT+MQTTCONNCFG   |   0    |  1  |  0  |  0  | Config connexion MQTT             |
 | AT+MQTTCONN      |   0    |  1  |  1  |  0  | Connexion MQTT                    |
-| AT+MQTTPUB       |   0    |  1  |  0  |  0  | Publication MQTT                  |
+| AT+MQTTPUB       |   0    |  1  |  0  |  0  | Publie des messages MQTT          |
 | AT+MQTTPUBRAW    |   0    |  1  |  0  |  0  | Publication brute MQTT            |
 | AT+MQTTSUB       |   0    |  1  |  1  |  0  | Souscription MQTT                 |
 | AT+MQTTUNSUB     |   0    |  1  |  0  |  0  | Désabonnement MQTT                |
@@ -157,13 +157,13 @@ La commande `AT+CMD?` retourne la liste des commandes AT supportées, sous la fo
 
 | Commande      | Global | Get | Set | Exe | Description                       |
 |---------------|--------|-----|-----|-----|-----------------------------------|
-| AT+MDNS       |   0    |  1  |  0  |  0  | mDNS                              |
-| AT+WPS        |   0    |  1  |  0  |  0  | WPS WiFi                          |
+| AT+MDNS       |   0    |  1  |  0  |  0  | Configure le service mDNS         |
+| AT+WPS        |   0    |  1  |  0  |  0  | Configure la fonction WPS        |
 | AT+CWSTARTSMART|  0    |  1  |  0  |  1  | SmartConfig WiFi                  |
 | AT+CWSTOPSMART|   0    |  0  |  0  |  1  | Arrêt SmartConfig                 |
 | AT+FACTPLCP   |   0    |  1  |  0  |  0  | Factory PLC                       |
-| AT+UART       |   0    |  1  |  1  |  0  | Config UART                       |
-| AT+UART_CUR   |   0    |  1  |  1  |  0  | Config UART courant               |
-| AT+UART_DEF   |   0    |  1  |  1  |  0  | Config UART par défaut            |
+| AT+UART       |   0    |  1  |  1  |  0  | Interroge/configure les paramètres UART |
+| AT+UART_CUR   |   0    |  1  |  1  |  0  | Interroge/configure la config UART courante |
+| AT+UART_DEF   |   0    |  1  |  1  |  0  | Interroge/configure la config UART par défaut |
 
 ---

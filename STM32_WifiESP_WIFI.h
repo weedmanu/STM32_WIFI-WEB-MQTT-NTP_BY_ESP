@@ -7,18 +7,18 @@
  * @brief   Fonctions haut niveau WiFi pour ESP01 (scan, mode, DHCP, connexion, etc)
  *
  * @details
- * Ce header regroupe toutes les fonctions de gestion WiFi haut niveau du module ESP01 :
- * - Modes WiFi (STA, AP, STA+AP)
- * - Scan des réseaux, connexion, déconnexion
- * - DHCP, IP, MAC, hostname
- * - TCP/IP, ping, statut
+ * Ce header regroupe toutes les fonctions de gestion WiFi haut niveau du module ESP01,
+ * nécessitant une connexion ou une configuration réseau : scan, modes, DHCP, IP, MAC,
+ * hostname, ping, TCP/IP, AP, etc.
  *
  * @note
  * - Nécessite le driver bas niveau STM32_WifiESP.h
+ * - Compatible STM32CubeIDE.
+ * - Toutes les fonctions ici nécessitent une initialisation préalable du module ESP01.
  ******************************************************************************
  */
 
-#ifndef STM32_WIFIESP_WIFI_H_ // Protection contre l'inclusion multiple
+#ifndef STM32_WIFIESP_WIFI_H_
 #define STM32_WIFIESP_WIFI_H_
 
 /* ========================== INCLUDES ========================== */
@@ -28,64 +28,78 @@
 #include <stdint.h>        // Types entiers standard (uint8_t, etc.)
 
 /* =========================== DEFINES ========================== */
-#define ESP01_MAX_SSID_LEN 32                       // Longueur max d'un SSID WiFi
-#define ESP01_MAX_SSID_BUF (ESP01_MAX_SSID_LEN + 1) // Taille buffer SSID (avec \0)
-#define ESP01_MAX_ENCRYPTION_LEN 8                  // Longueur max pour le type d'encryptage
-#define ESP01_MAX_IP_LEN 32                         // Longueur max pour une adresse IP
-#define ESP01_MAX_HOSTNAME_LEN 64                   // Longueur max pour un hostname
-#define ESP01_MAX_MAC_LEN 18                        // Longueur max pour une adresse MAC
-#define ESP01_MAX_SCAN_NETWORKS 10                  // Nombre max de réseaux détectés lors d'un scan
-#define ESP01_MAX_WIFI_SSID_LEN ESP01_MAX_SSID_LEN  // Longueur max pour un SSID WiFi
-#define ESP01_MAX_WIFI_PWD_LEN 64                   // Longueur max pour un mot de passe WiFi
-#define ESP01_WIFI_CONNECT_TIMEOUT 15000            // Timeout pour la connexion WiFi en ms
-#define ESP01_WIFI_CONFIG_TIMEOUT 2000              // Timeout pour la configuration WiFi en ms
-#define ESP01_MAC_BYTES 6                           // Nombre d'octets dans une adresse MAC
-/* =========================== TYPES ============================ */
+// ----------- CONSTANTES WI-FI -----------
+#define ESP01_MAX_SSID_LEN 32                               // Longueur max d'un SSID WiFi
+#define ESP01_MAX_SSID_BUF (ESP01_MAX_SSID_LEN + 1)         // Taille buffer SSID (avec \0)
+#define ESP01_MAX_PASSWORD_LEN 64                           // Longueur max d'un mot de passe WiFi
+#define ESP01_MAX_PASSWORD_BUF (ESP01_MAX_PASSWORD_LEN + 1) // Taille buffer mot de passe (avec \0)
+#define ESP01_MAX_ENCRYPTION_LEN 8                          // Longueur max pour le type d'encryptage
+#define ESP01_MAX_IP_LEN 32                                 // Longueur max pour une adresse IP
+#define ESP01_MAX_HOSTNAME_LEN 64                           // Longueur max pour un hostname
+#define ESP01_MAX_MAC_LEN 18                                // Longueur max pour une adresse MAC
+#define ESP01_MAX_SCAN_NETWORKS 10                          // Nombre max de réseaux détectés lors d'un scan
+#define ESP01_MAX_WIFI_PWD_LEN 64                           // Longueur max pour un mot de passe WiFi
+#define ESP01_WIFI_CONFIG_TIMEOUT 2000                      // Timeout pour la configuration WiFi en ms
+#define ESP01_MAC_BYTES 6                                   // Nombre d'octets dans une adresse MAC
+
+/* =========================== TYPES & STRUCTURES ============================ */
 /**
- * @brief Structure représentant un réseau WiFi détecté lors d'un scan.
+ * @brief Structure représentant un réseau WiFi trouvé lors d'un scan.
+ *
+ * @details
+ * Contient toutes les informations retournées par la commande AT+CWLAP :
+ * - SSID, MAC, RSSI (dBm), canal, type d'encryptage, offset de fréquence, etc.
  */
 typedef struct
 {
-    char ssid[ESP01_MAX_SSID_BUF];             ///< SSID du réseau (max 32 + \0)
-    int rssi;                                  ///< Puissance du signal (dBm)
-    char encryption[ESP01_MAX_ENCRYPTION_LEN]; ///< Type d'encryptage (texte ou code)
+    char ssid[ESP01_MAX_SSID_BUF];             // SSID du réseau (max 32 caractères + \0)
+    char mac[ESP01_MAX_MAC_LEN];               // Adresse MAC du point d'accès (format XX:XX:XX:XX:XX:XX)
+    int rssi;                                  // RSSI en dBm (valeur signée)
+    uint8_t channel;                           // Canal utilisé par le point d'accès (1-14)
+    char encryption[ESP01_MAX_ENCRYPTION_LEN]; // Type d'encryptage (WEP, WPA, WPA2, etc.)
+    int freq_offset;                           // Décalage de fréquence (en MHz, optionnel)
+    int freqcal_val;                           // Valeur de calibration de fréquence (optionnel)
+    int pairwise_cipher;                       // Chiffrement pairwise (0-7, selon le type d'encryptage)
+    int group_cipher;                          // Chiffrement de groupe (0-7, selon le type d'encryptage)
+    int bgn;                                   // Support BGN (0 = non, 1 = B, 2 = G, 3 = N, ...)
+    int wps;                                   // Support WPS (0 = non, 1 = oui)
 } esp01_network_t;
 
 /**
  * @brief Modes WiFi disponibles pour l'ESP01.
+ *
+ * @details
+ * - STA : station (client)
+ * - AP  : point d'accès
+ * - STA+AP : mode mixte
  */
 typedef enum
 {
-    ESP01_WIFI_MODE_STA = 1,   ///< Mode station (client)
-    ESP01_WIFI_MODE_AP = 2,    ///< Mode point d'accès (AP)
-    ESP01_WIFI_MODE_STA_AP = 3 ///< Mode mixte (station + AP)
+    ESP01_WIFI_MODE_STA = 1,   // Mode station (client)
+    ESP01_WIFI_MODE_AP = 2,    // Mode point d'accès (AP)
+    ESP01_WIFI_MODE_STA_AP = 3 // Mode mixte (station + AP)
 } ESP01_WifiMode_t;
 
-/* ======================= FONCTIONS PRINCIPALES ======================= */
-
+/* ========================= FONCTIONS PRINCIPALES (API WiFi) ========================= */
 /**
- * @brief  Récupère le statut de connexion WiFi.
+ * @brief  Récupère le statut de connexion WiFi (connecté ou non).
  * @return ESP01_Status_t Code de statut (OK, erreur, etc.)
  */
 ESP01_Status_t esp01_get_connection_status(void);
 
 /**
- * @brief  Récupère le mode WiFi actuel
- * @param  mode Pointeur vers la variable qui recevra le mode WiFi
- *              - 1: Station
- *              - 2: Access Point
- *              - 3: Station + Access Point
+ * @brief  Récupère le mode WiFi actuel (STA, AP, STA+AP).
+ * @param  mode Pointeur vers la variable qui recevra le mode WiFi (1=STA, 2=AP, 3=STA+AP)
  * @retval ESP01_Status_t ESP01_OK en cas de succès ou code d'erreur
- * @note   Cette fonction envoie la commande AT+CWMODE?
  */
 ESP01_Status_t esp01_get_wifi_mode(uint8_t *mode);
 
 /**
- * @brief  Définit le mode WiFi.
+ * @brief  Définit le mode WiFi (STA, AP, STA+AP).
  * @param  mode Mode à appliquer (voir ESP01_WifiMode_t).
  * @return ESP01_Status_t
  */
-ESP01_Status_t esp01_set_wifi_mode(int mode);
+ESP01_Status_t esp01_set_wifi_mode(uint8_t mode);
 
 /**
  * @brief  Scanne les réseaux WiFi à proximité.
@@ -95,6 +109,14 @@ ESP01_Status_t esp01_set_wifi_mode(int mode);
  * @return ESP01_Status_t
  */
 ESP01_Status_t esp01_scan_networks(esp01_network_t *networks, uint8_t max_networks, uint8_t *found_networks);
+
+/**
+ * @brief  Parse une ligne de réponse CWLAP et remplit la structure esp01_network_t.
+ * @param  line    Ligne à parser (format CWLAP).
+ * @param  network Pointeur vers la structure à remplir.
+ * @return true si le parsing a réussi, false sinon.
+ */
+bool esp01_parse_cwlap_line(const char *line, esp01_network_t *network);
 
 /**
  * @brief  Active ou désactive le DHCP.
@@ -133,8 +155,8 @@ ESP01_Status_t esp01_connect_wifi(const char *ssid, const char *password);
 ESP01_Status_t esp01_get_current_ip(char *ip_buf, size_t buf_len);
 
 /**
- * @brief  Récupère le RSSI courant.
- * @param  rssi Pointeur vers la variable de sortie.
+ * @brief  Récupère le RSSI courant (niveau de signal).
+ * @param  rssi Pointeur vers la variable de sortie (dBm).
  * @return ESP01_Status_t
  */
 ESP01_Status_t esp01_get_rssi(int *rssi);
@@ -209,32 +231,7 @@ ESP01_Status_t esp01_get_ap_config(char *out, size_t out_size);
  * @param  encryption Type d'encryptage.
  * @return ESP01_Status_t
  */
-ESP01_Status_t esp01_start_ap_config(const char *ssid, const char *password, int channel, int encryption);
-
-/**
- * @brief  Parse la réponse CWJAP et extrait les informations de connexion WiFi
- * @param  resp       Réponse brute du module ESP.
- * @param  ssid       Buffer pour stocker le SSID (NULL si non requis).
- * @param  ssid_size  Taille du buffer SSID.
- * @param  bssid      Buffer pour stocker le BSSID/MAC AP (NULL si non requis).
- * @param  bssid_size Taille du buffer BSSID.
- * @param  channel    Pointeur pour stocker le canal (NULL si non requis).
- * @param  rssi       Pointeur pour stocker le RSSI (NULL si non requis).
- * @param  enc_type   Pointeur pour stocker le type d'encryption (NULL si non requis).
- * @retval ESP01_Status_t
- */
-ESP01_Status_t esp01_parse_cwjap_response(
-    const char *resp,
-    char *ssid, size_t ssid_size,
-    char *bssid, size_t bssid_size,
-    int *channel, int *rssi, int *enc_type);
-
-/**
- * @brief  Récupère le canal WiFi actuel.
- * @param  channel Pointeur vers la variable de sortie.
- * @return ESP01_Status_t
- */
-ESP01_Status_t esp01_get_channel(int *channel);
+ESP01_Status_t esp01_start_ap_config(const char *ssid, const char *password, uint8_t channel, uint8_t encryption);
 
 /**
  * @brief  Récupère les informations complètes de connexion WiFi.
@@ -249,10 +246,10 @@ ESP01_Status_t esp01_get_channel(int *channel);
 ESP01_Status_t esp01_get_connection_info(
     char *ssid, size_t ssid_size,
     char *bssid, size_t bssid_size,
-    int *channel, int *rssi);
+    uint8_t *channel, int *rssi);
 
 /**
- * @brief  Connecte au WiFi avec configuration avancée.
+ * @brief  Connecte au WiFi avec configuration avancée (mode, DHCP/IP statique).
  * @param  mode      Mode WiFi.
  * @param  ssid      SSID du réseau.
  * @param  password  Mot de passe.
@@ -263,42 +260,59 @@ ESP01_Status_t esp01_get_connection_info(
  * @return ESP01_Status_t
  */
 ESP01_Status_t esp01_connect_wifi_config(
-    ESP01_WifiMode_t mode, // Mode WiFi à utiliser
-    const char *ssid,      // SSID du réseau
-    const char *password,  // Mot de passe
-    bool use_dhcp,         // true = DHCP, false = IP statique
-    const char *ip,        // IP statique (optionnel)
-    const char *gateway,   // Gateway (optionnel)
-    const char *netmask);  // Masque réseau (optionnel)
+    ESP01_WifiMode_t mode,
+    const char *ssid,
+    const char *password,
+    bool use_dhcp,
+    const char *ip,
+    const char *gateway,
+    const char *netmask);
 
 /**
- * @brief  Récupère le mode de connexion actuel (simple ou multiple)
+ * @brief  Récupère le mode de connexion actuel (simple ou multiple).
  * @param  multi_conn Pointeur vers la variable qui recevra l'état
  *                   - 0: Mode connexion unique
  *                   - 1: Mode multi-connexions
  * @retval ESP01_Status_t ESP01_OK en cas de succès ou code d'erreur
- * @note   Cette fonction envoie la commande AT+CIPMUX?
  */
 ESP01_Status_t esp01_get_connection_mode(uint8_t *multi_conn);
 
 /**
- * @brief  Récupère les informations sur le point d'accès connecté
+ * @brief  Récupère les informations sur le point d'accès connecté.
  * @param  ssid    Buffer pour stocker le SSID (NULL si non requis)
  * @param  bssid   Buffer pour stocker le BSSID (NULL si non requis)
  * @param  channel Pointeur pour stocker le canal (NULL si non requis)
  * @retval ESP01_Status_t ESP01_OK en cas de succès ou code d'erreur
- * @note   Cette fonction envoie la commande AT+CWJAP?
  */
 ESP01_Status_t esp01_get_connected_ap_info(char *ssid, char *bssid, uint8_t *channel);
 
-/* ======================= FONCTIONS UTILITAIRES ======================= */
+/* ========================= OUTILS DE PARSING & CONVERSION ========================= */
+/**
+ * @brief  Parse la réponse CWJAP et extrait les informations de connexion WiFi.
+ * @param  resp       Réponse brute du module ESP.
+ * @param  ssid       Buffer pour stocker le SSID (NULL si non requis).
+ * @param  ssid_size  Taille du buffer SSID.
+ * @param  bssid      Buffer pour stocker le BSSID/MAC AP (NULL si non requis).
+ * @param  bssid_size Taille du buffer BSSID.
+ * @param  channel    Pointeur pour stocker le canal (NULL si non requis).
+ * @param  rssi       Pointeur pour stocker le RSSI (NULL si non requis).
+ * @param  enc_type   Pointeur pour stocker le type d'encryption (NULL si non requis).
+ * @retval ESP01_Status_t
+ */
+ESP01_Status_t esp01_parse_cwjap_response(
+    const char *resp,
+    char *ssid, size_t ssid_size,
+    char *bssid, size_t bssid_size,
+    uint8_t *channel, int *rssi, uint8_t *enc_type);
+
+/* ========================= FONCTIONS UTILITAIRES (AFFICHAGE, FORMATAGE) ========================= */
 
 /**
  * @brief  Retourne une chaîne lisible pour un mode WiFi.
  * @param  mode Mode à convertir.
  * @return Chaîne descriptive.
  */
-const char *esp01_wifi_mode_to_string(int mode);
+const char *esp01_wifi_mode_to_string(uint8_t mode);
 
 /**
  * @brief  Retourne une chaîne lisible pour le type d'encryptage.
@@ -347,7 +361,7 @@ const char *esp01_cwqap_to_string(const char *resp);
  * @param  rf_dbm Puissance en dBm.
  * @return Chaîne descriptive.
  */
-const char *esp01_rf_power_to_string(int rf_dbm);
+const char *esp01_rf_power_to_string(uint8_t rf_dbm);
 
 /**
  * @brief  Retourne une chaîne lisible pour la config AP.

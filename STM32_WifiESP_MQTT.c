@@ -29,6 +29,12 @@
 #include <string.h>             // Fonctions de manipulation de chaînes
 #include <stdio.h>              // Fonctions d'entrée/sortie
 
+// ==================== CONSTANTES SPÉCIFIQUES AU MODULE ====================
+#define ESP01_MQTT_CONNECT_TIMEOUT 5000   // Timeout connexion MQTT (ms)
+#define ESP01_MQTT_CONNACK_TIMEOUT 10000  // Timeout CONNACK MQTT (ms)
+#define ESP01_MQTT_PUBLISH_TIMEOUT 3000   // Timeout publication MQTT (ms)
+#define ESP01_MQTT_SUBSCRIBE_TIMEOUT 3000 // Timeout abonnement MQTT (ms)
+
 // ==================== DEFINES PRIVÉS ====================
 #define MQTT_HEADER_CONNECT 0x10     // Paquet MQTT CONNECT
 #define MQTT_HEADER_CONNACK 0x20     // Paquet MQTT CONNACK
@@ -169,7 +175,7 @@ ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port, const ch
     ESP01_LOG_DEBUG("MQTT", "=== Attente du CONNACK (timeout 10s) ==="); // Log attente CONNACK
     HAL_Delay(500);                                                      // Petite pause
 
-    while ((HAL_GetTick() - start) < 10000 && !found_connack) // Boucle d'attente
+    while ((HAL_GetTick() - start) < ESP01_MQTT_CONNACK_TIMEOUT && !found_connack) // Boucle d'attente
     {
         uint16_t rx_len = esp01_get_new_data(rx_buf, sizeof(rx_buf)); // Récupère les nouvelles données
         if (rx_len > 0)
@@ -244,13 +250,13 @@ ESP01_Status_t esp01_mqtt_connect(const char *broker_ip, uint16_t port, const ch
 
     if (status == ESP01_OK)
     {
-        g_mqtt_client.connected = true;                                                   // Marque comme connecté
-        strncpy(g_mqtt_client.broker_ip, broker_ip, sizeof(g_mqtt_client.broker_ip) - 1); // Sauvegarde l'IP du broker
-        g_mqtt_client.broker_port = port;                                                 // Sauvegarde le port
-        strncpy(g_mqtt_client.client_id, client_id, sizeof(g_mqtt_client.client_id) - 1); // Sauvegarde le client ID
-        g_mqtt_client.keep_alive = ESP01_MQTT_KEEPALIVE_DEFAULT;                          // Keepalive par défaut
-        g_mqtt_client.packet_id = 1;                                                      // Réinitialise le packet ID
-        ESP01_LOG_DEBUG("MQTT", "=== Connexion établie avec succès ===");                 // Log succès
+        g_mqtt_client.connected = true;                                                         // Marque comme connecté
+        esp01_safe_strcpy(g_mqtt_client.broker_ip, sizeof(g_mqtt_client.broker_ip), broker_ip); // Sauvegarde l'IP du broker (sécurisé)
+        g_mqtt_client.broker_port = port;                                                       // Sauvegarde le port
+        esp01_safe_strcpy(g_mqtt_client.client_id, sizeof(g_mqtt_client.client_id), client_id); // Sauvegarde le client ID (sécurisé)
+        g_mqtt_client.keep_alive = ESP01_MQTT_KEEPALIVE_DEFAULT;                                // Keepalive par défaut
+        g_mqtt_client.packet_id = 1;                                                            // Réinitialise le packet ID
+        ESP01_LOG_DEBUG("MQTT", "=== Connexion établie avec succès ===");                       // Log succès
     }
     else
     {
@@ -345,7 +351,7 @@ ESP01_Status_t esp01_mqtt_publish(const char *topic, const char *message, uint8_
 
             ESP01_LOG_DEBUG("MQTT", "=== Attente du PUBACK ==="); // Log attente PUBACK
 
-            while ((HAL_GetTick() - start) < 2000 && !found_puback)
+            while ((HAL_GetTick() - start) < ESP01_MQTT_PUBLISH_TIMEOUT && !found_puback)
             {
                 uint16_t rx_len = esp01_get_new_data(rx_buf, sizeof(rx_buf));
                 if (rx_len > 0)
@@ -444,9 +450,8 @@ ESP01_Status_t esp01_mqtt_subscribe(const char *topic, uint8_t qos)
  */
 ESP01_Status_t esp01_mqtt_ping(void)
 {
-    ESP01_LOG_DEBUG("MQTT", "Envoi PINGREQ"); // Log l'envoi du ping
-    if (!g_mqtt_client.connected)
-        return ESP01_FAIL; // Vérifie la connexion
+    ESP01_LOG_DEBUG("MQTT", "Envoi PINGREQ");            // Log l'envoi du ping
+    VALIDATE_PARAM(g_mqtt_client.connected, ESP01_FAIL); // Vérifie la connexion
 
     char cmd[ESP01_MAX_CMD_BUF], resp[ESP01_MAX_RESP_BUF]; // Buffers pour commandes et réponses
     ESP01_Status_t status;                                 // Statut de retour
@@ -477,7 +482,7 @@ ESP01_Status_t esp01_mqtt_ping(void)
         bool found_pingresp = false;
         uint32_t start = HAL_GetTick();
 
-        while ((HAL_GetTick() - start) < 2000 && !found_pingresp)
+        while ((HAL_GetTick() - start) < ESP01_MQTT_PUBLISH_TIMEOUT && !found_pingresp)
         {
             uint16_t rx_len = esp01_get_new_data(rx_buf, sizeof(rx_buf));
             if (rx_len > 0)
@@ -517,7 +522,7 @@ ESP01_Status_t esp01_mqtt_disconnect(void)
 {
     ESP01_LOG_DEBUG("MQTT", "Déconnexion du broker MQTT"); // Log la déconnexion
     char resp[ESP01_MAX_RESP_BUF];                         // Buffer pour la réponse
-    if (esp01_send_raw_command_dma("AT+CIPCLOSE", resp, sizeof(resp), "OK", 3000) == ESP01_OK || strstr(resp, "CLOSED"))
+    if (esp01_send_raw_command_dma("AT+CIPCLOSE", resp, sizeof(resp), "OK", ESP01_AT_COMMAND_TIMEOUT) == ESP01_OK || strstr(resp, "CLOSED"))
     {
         g_mqtt_client.connected = false; // Marque comme déconnecté
         return ESP01_OK;                 // Déconnexion réussie
@@ -645,7 +650,7 @@ ESP01_Status_t esp01_mqtt_check_connection(void)
 {
     if (!g_mqtt_client.connected)
     {
-        ESP01_LOG_INFO("MQTT", "Connexion MQTT perdue, tentative de reconnexion");
+        ESP01_LOG_DEBUG("MQTT", "Connexion MQTT perdue, tentative de reconnexion");
         return esp01_mqtt_connect(
             g_mqtt_client.broker_ip,
             g_mqtt_client.broker_port,
@@ -654,3 +659,5 @@ ESP01_Status_t esp01_mqtt_check_connection(void)
     }
     return ESP01_OK;
 }
+
+// ========================= FIN DU MODULE =========================

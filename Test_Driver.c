@@ -52,7 +52,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-// Pas de typedef utilisateur spécifique ici
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -62,7 +62,7 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-// Pas de macro utilisateur spécifique ici
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -153,36 +153,19 @@ int main(void)
   }
   HAL_Delay(1000);
 
-  printf("\n[TEST][INFO] === Restauration paramètres usine (AT+RESTORE) ===\r\n");
-  status = esp01_restore();
-  printf("[TEST][INFO] Restauration usine : %s\r\n", esp01_get_error_string(status));
-  if (status != ESP01_OK)
-  {
-    printf("[TEST][ERROR] Échec de la restauration usine\r\n");
-  }
-  HAL_Delay(1000);
-
   printf("\n[TEST][INFO] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
   char resp[512] = {0};
-  char *lines[5] = {NULL};
-  char lines_buffer[512] = {0};
-
-  if (esp01_get_at_version(resp, sizeof(resp)) == ESP01_OK)
+  status = esp01_get_at_version(resp, sizeof(resp));
+  if (status == ESP01_OK)
   {
-    uint8_t line_count = esp01_split_response_lines(resp, lines, 5,
-                                                    lines_buffer, sizeof(lines_buffer), true);
-
-    printf("[TEST][INFO] Version du firmware (%d lignes) :\r\n", line_count);
-    // Afficher les lignes brutes, sans préfixe
-    for (uint8_t i = 0; i < line_count; i++)
-    {
-      printf("%s\r\n", lines[i]); // Affichage des lignes sans préfixe
-    }
+    uint8_t line_count = esp01_display_firmware_info(resp);
+    printf("[TEST][INFO] Nombre de lignes d'informations extraites : %d\r\n", line_count);
   }
   else
   {
-    printf("[TEST][ERROR] Échec de la lecture de version\r\n");
+    printf("[TEST][ERROR] Échec de la lecture de la version firmware : %s\r\n", esp01_get_error_string(status));
   }
+  HAL_Delay(500);
 
   printf("\n[TEST][INFO] === Lecture configuration UART ===\r\n");
   status = esp01_get_uart_config(buf, sizeof(buf));
@@ -240,17 +223,63 @@ int main(void)
     printf("[TEST][ERROR] Échec de la lecture du niveau de log : %s\r\n", esp01_get_error_string(status));
   }
   HAL_Delay(500);
-
   printf("\n[TEST][INFO] === Lecture RAM libre ===\r\n");
-  uint32_t free_ram = 0;
-  status = esp01_get_sysram(&free_ram);
+  uint32_t free_ram = 0, min_ram = 0;
+  status = esp01_get_sysram(&free_ram, &min_ram);
+  char ram_str[ESP01_MAX_RESP_BUF];
   if (status == ESP01_OK)
   {
-    printf("[TEST][INFO] RAM libre : %lu octets\r\n", free_ram);
+    esp01_sysram_to_string(free_ram, min_ram, ram_str, sizeof(ram_str));
+    printf("[TEST][INFO] RAM libre : %s\r\n", ram_str);
   }
   else
   {
     printf("[TEST][ERROR] Échec de la lecture de la RAM libre : %s\r\n", esp01_get_error_string(status));
+  }
+  HAL_Delay(500);
+
+  printf("\n[TEST][INFO] === Lecture stockage système ===\r\n");
+  uint32_t sysstore = 0;
+  status = esp01_get_sysstore(&sysstore);
+  char sysstore_str[ESP01_MAX_RESP_BUF];
+  if (status == ESP01_OK)
+  {
+    esp01_sysstore_to_string(sysstore, sysstore_str, sizeof(sysstore_str));
+    printf("[TEST][INFO] %s\r\n", sysstore_str);
+  }
+  else
+  {
+    printf("[TEST][ERROR] Échec de la lecture du stockage système : %s\r\n", esp01_get_error_string(status));
+  }
+  HAL_Delay(500);
+
+  printf("\n[TEST][INFO] === Lecture Flash système (partitions détaillées) ===\r\n");
+  char sysflash_resp[512] = {0}; // ou 2048, ou 4096 si tu veux être large
+  status = esp01_get_sysflash(sysflash_resp, sizeof(sysflash_resp));
+  if (status == ESP01_OK)
+  {
+    // Affichage utilisateur, pas de réponse brute ici (comme pour GMR)
+    printf("[TEST][INFO] Table SYSFLASH récupérée avec succès\r\n");
+    uint8_t part_count = esp01_display_sysflash_partitions(sysflash_resp);
+    printf("[TEST][INFO] Nombre de partitions extraites : %d\r\n", part_count);
+  }
+  else
+  {
+    printf("[TEST][ERROR] Impossible de récupérer la table SYSFLASH : %s\r\n", esp01_get_error_string(status));
+  }
+
+  printf("\n[TEST][INFO] === Lecture RAM utilisateur ===\r\n");
+  uint32_t userram = 0;
+  status = esp01_get_userram(&userram);
+  char userram_str[ESP01_MAX_RESP_BUF];
+  if (status == ESP01_OK)
+  {
+    esp01_userram_to_string(userram, userram_str, sizeof(userram_str));
+    printf("[TEST][INFO] %s\r\n", userram_str);
+  }
+  else
+  {
+    printf("[TEST][ERROR] Échec de la lecture de la RAM utilisateur : %s\r\n", esp01_get_error_string(status));
   }
   HAL_Delay(500);
 
@@ -265,6 +294,16 @@ int main(void)
   {
     printf("[TEST][ERROR] Échec de la lecture de la liste des commandes AT : %s\r\n", esp01_get_error_string(status));
   }
+  HAL_Delay(500);
+
+  printf("\n[TEST][INFO] === Restauration paramètres usine (AT+RESTORE) ===\r\n");
+  status = esp01_restore();
+  printf("[TEST][INFO] Restauration usine : %s\r\n", esp01_get_error_string(status));
+  if (status != ESP01_OK)
+  {
+    printf("[TEST][ERROR] Échec de la restauration usine\r\n");
+  }
+  printf("\n[TEST][INFO] === Fin des tests du driver STM32_WifiESP ===\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */

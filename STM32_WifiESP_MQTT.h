@@ -24,23 +24,23 @@
 
 /* ========================== INCLUDES ========================== */
 
-#include "STM32_WifiESP.h"         // Fonctions de base ESP01
-#include "STM32_WifiESP_WIFI.h"    // Fonctions WiFi ESP01
-#include "STM32_WifiESP_HTTP.h"    // Pour compatibilité éventuelle HTTP
-#include <stdbool.h>               // Types booléens
-#include <stdint.h>                // Types entiers standard
+#include "STM32_WifiESP.h"      // Fonctions de base ESP01
+#include "STM32_WifiESP_WIFI.h" // Fonctions WiFi ESP01
+#include "STM32_WifiESP_HTTP.h" // Pour compatibilité éventuelle HTTP
+#include <stdbool.h>            // Types booléens
+#include <stdint.h>             // Types entiers standard
 
 /* =========================== DEFINES ========================== */
 
 // ----------- CONSTANTES MQTT -----------
-#define ESP01_MQTT_MAX_TOPIC_LEN      128   // Taille max d'un topic MQTT
-#define ESP01_MQTT_MAX_PAYLOAD_LEN    256   // Taille max d'un message MQTT
-#define ESP01_MQTT_MAX_CLIENT_ID_LEN  32    // Taille max d'un client ID MQTT
-#define ESP01_MQTT_KEEPALIVE_DEFAULT  60    // Keepalive par défaut (secondes)
-#define ESP01_MQTT_QOS0               0     // QoS 0
-#define ESP01_MQTT_QOS1               1     // QoS 1
-#define ESP01_MQTT_QOS2               2     // QoS 2
-#define ESP01_MQTT_DEFAULT_PORT       1883  // Port MQTT par défaut
+#define ESP01_MQTT_MAX_TOPIC_LEN 128    // Taille max d'un topic MQTT
+#define ESP01_MQTT_MAX_PAYLOAD_LEN 256  // Taille max d'un message MQTT
+#define ESP01_MQTT_MAX_CLIENT_ID_LEN 32 // Taille max d'un client ID MQTT
+#define ESP01_MQTT_KEEPALIVE_DEFAULT 60 // Keepalive par défaut (secondes)
+#define ESP01_MQTT_QOS0 0               // QoS 0
+#define ESP01_MQTT_QOS1 1               // QoS 1
+#define ESP01_MQTT_QOS2 2               // QoS 2
+#define ESP01_MQTT_DEFAULT_PORT 1883    // Port MQTT par défaut
 
 /* =========================== STRUCTURES ======================= */
 
@@ -49,12 +49,12 @@
  */
 typedef struct
 {
-    bool     connected;                                 ///< Statut de connexion au broker
-    char     broker_ip[ESP01_MAX_IP_LEN];               ///< Adresse IP du broker
-    uint16_t broker_port;                               ///< Port du broker
-    char     client_id[ESP01_MQTT_MAX_CLIENT_ID_LEN+1]; ///< Identifiant client MQTT
-    uint16_t keep_alive;                                ///< Intervalle keep-alive (s)
-    uint16_t packet_id;                                 ///< Dernier packet ID utilisé
+    bool connected;                                   ///< Statut de connexion au broker
+    char broker_ip[ESP01_MAX_IP_LEN];                 ///< Adresse IP du broker
+    uint16_t broker_port;                             ///< Port du broker
+    char client_id[ESP01_MQTT_MAX_CLIENT_ID_LEN + 1]; ///< Identifiant client MQTT
+    uint16_t keep_alive;                              ///< Intervalle keep-alive (s)
+    uint16_t packet_id;                               ///< Dernier packet ID utilisé
 } mqtt_client_t;
 
 /**

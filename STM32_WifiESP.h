@@ -25,12 +25,11 @@
 
 /* ========================== INCLUDES ========================== */
 
-#include <string.h>  // Fonctions de manipulation de chaînes
+#include "main.h"    // HAL, UART, etc.
 #include <stdbool.h> // Types booléens
 #include <stddef.h>  // Types de taille (size_t, etc.)
 #include <stdint.h>  // Types entiers standard (uint8_t, uint16_t, etc.)
-#include "main.h"    // HAL, UART, etc.
-
+#include <string.h>  // Pour strlen, strcpy dans les fonctions inline
 /* =========================== DEFINES ========================== */
 
 // ----------- DEBUG -----------
@@ -39,86 +38,59 @@
 // ----------- CONSTANTES -----------
 #define ESP01_DMA_RX_BUF_SIZE 1024 // Taille buffer DMA RX UART
 #define ESP01_MAX_CMD_BUF 512      // Taille max buffer commande AT
+#define ESP01_MAX_LINE_BUF 256     // Taille max buffer ligne (pour les réponses AT)
 #define ESP01_MAX_RESP_BUF 2048    // Taille max buffer réponse
 #define ESP01_LARGE_RESP_BUF 4096  // Taille buffer réponse large (pour les réponses longues)
-#define ESP01_SMALL_BUF_SIZE 64    // Taille petit buffer
+#define ESP01_SMALL_BUF_SIZE 64    // Taille petit buffer (usage courant)
 #define ESP01_TIMEOUT_SHORT 2000   // Timeout court (ms)
 #define ESP01_TIMEOUT_MEDIUM 7000  // Timeout moyen (ms)
 #define ESP01_TIMEOUT_LONG 15000   // Timeout long (ms)
-#define UART_STR_BUF_SIZE 128      // Taille buffer UART string
-#define SLEEP_STR_BUF_SIZE 64      // Taille buffer sleep string
-#define SYSLOG_STR_BUF_SIZE 32     // Taille buffer syslog string
 
-/* =========================== TYPES ============================ */
+// ----------- TIMEOUT GÉNÉRIQUE -----------
+#define ESP01_AT_COMMAND_TIMEOUT 2000 // Timeout commande AT générique (ms)
 
-// ----------- Statuts -----------
+/* =========================== TYPES & STRUCTURES ============================ */
 /**
  * @brief  Codes de statut pour les fonctions du driver ESP01.
  */
 typedef enum
 {
-    /* ---- Statuts généraux ---- */
-    ESP01_OK = 0, ///< Opération réussie
-    ESP01_FAIL,   ///< Échec général
-    ESP01_EXIT,   ///< Sortie demandée
+    ESP01_OK = 0,                   // Opération réussie
+    ESP01_FAIL,                     // Échec générique
+    ESP01_EXIT,                     // Sortie demandée
+    ESP01_TIMEOUT,                  // Timeout sur opération
+    ESP01_INVALID_PARAM,            // Paramètre invalide
+    ESP01_BUFFER_OVERFLOW,          // Dépassement de buffer
+    ESP01_UNEXPECTED_RESPONSE,      // Réponse inattendue
+    ESP01_NOT_INITIALIZED,          // Module non initialisé
+    ESP01_NOT_DETECTED,             // Module non détecté
+    ESP01_CMD_TOO_LONG,             // Commande AT trop longue
+    ESP01_MEMORY_ERROR,             // Erreur mémoire
+    ESP01_PARSE_ERROR,              // Erreur de parsing
+    ESP01_NOT_CONNECTED,            // Non connecté
+    ESP01_ALREADY_CONNECTED,        // Déjà connecté
+    ESP01_CONNECTION_ERROR,         // Erreur de connexion
+    ESP01_ROUTE_NOT_FOUND,          // Route non trouvée
+    ESP01_GMR_PARSE_ERROR,          // Erreur parsing GMR
+    ESP01_WIFI_NOT_CONNECTED = 100, // WiFi non connecté
+    ESP01_WIFI_TIMEOUT,             // Timeout WiFi
+    ESP01_WIFI_WRONG_PASSWORD,      // Mauvais mot de passe WiFi
+    ESP01_WIFI_AP_NOT_FOUND,        // Point d'accès non trouvé
+    ESP01_WIFI_CONNECT_FAIL,        // Échec connexion WiFi
+    ESP01_HTTP_PARSE_ERROR = 200,   // Erreur parsing HTTP
+    ESP01_HTTP_INVALID_REQUEST,     // Requête HTTP invalide
+    ESP01_HTTP_TIMEOUT,             // Timeout HTTP
+    ESP01_HTTP_CONNECTION_REFUSED,  // Connexion HTTP refusée
+    ESP01_MQTT_NOT_CONNECTED = 300, // MQTT non connecté
+    ESP01_MQTT_PROTOCOL_ERROR,      // Erreur protocole MQTT
+    ESP01_MQTT_SUBSCRIPTION_FAILED, // Abonnement MQTT échoué
+    ESP01_MQTT_PUBLISH_FAILED,      // Publication MQTT échouée
+    ESP01_NTP_SYNC_ERROR = 400,     // Erreur de synchro NTP
+    ESP01_NTP_INVALID_RESPONSE,     // Réponse NTP invalide
+    ESP01_NTP_SERVER_NOT_REACHABLE  // Serveur NTP injoignable
+} ESP01_Status_t;                   // Enum statut driver ESP01
 
-    /* ---- Erreurs génériques ---- */
-    ESP01_TIMEOUT,             ///< Timeout d'opération
-    ESP01_INVALID_PARAM,       ///< Paramètre invalide
-    ESP01_BUFFER_OVERFLOW,     ///< Dépassement de buffer
-    ESP01_UNEXPECTED_RESPONSE, ///< Réponse inattendue
-    ESP01_NOT_INITIALIZED,     ///< Module non initialisé
-    ESP01_NOT_DETECTED,        ///< Module ESP01 non détecté
-    ESP01_CMD_TOO_LONG,        ///< Commande trop longue
-    ESP01_MEMORY_ERROR,        ///< Erreur de mémoire
-    ESP01_PARSE_ERROR,         ///< Erreur de parsing générique
-
-    /* ---- Erreurs de connexion ---- */
-    ESP01_NOT_CONNECTED,     ///< Non connecté
-    ESP01_ALREADY_CONNECTED, ///< Déjà connecté
-    ESP01_CONNECTION_ERROR,  ///< Erreur de connexion
-    ESP01_ROUTE_NOT_FOUND,   ///< Route non trouvée
-    ESP01_GMR_PARSE_ERROR,   ///< Erreur de parsing GMR (remplacé esp01_parse_gmr_version)
-
-    /* ---- Erreurs spécifiques WiFi ---- */
-    ESP01_WIFI_NOT_CONNECTED = 100, ///< WiFi non connecté
-    ESP01_WIFI_TIMEOUT,             ///< Timeout de connexion WiFi
-    ESP01_WIFI_WRONG_PASSWORD,      ///< Mot de passe WiFi incorrect
-    ESP01_WIFI_AP_NOT_FOUND,        ///< Point d'accès introuvable
-    ESP01_WIFI_CONNECT_FAIL,        ///< Échec de connexion WiFi
-
-    /* ---- Erreurs spécifiques HTTP ---- */
-    ESP01_HTTP_PARSE_ERROR = 200,  ///< Erreur de parsing HTTP
-    ESP01_HTTP_INVALID_REQUEST,    ///< Requête HTTP invalide
-    ESP01_HTTP_TIMEOUT,            ///< Timeout HTTP
-    ESP01_HTTP_CONNECTION_REFUSED, ///< Connexion HTTP refusée
-
-    /* ---- Erreurs spécifiques MQTT ---- */
-    ESP01_MQTT_NOT_CONNECTED = 300, ///< Client MQTT non connecté
-    ESP01_MQTT_PROTOCOL_ERROR,      ///< Erreur de protocole MQTT
-    ESP01_MQTT_SUBSCRIPTION_FAILED, ///< Échec d'abonnement MQTT
-    ESP01_MQTT_PUBLISH_FAILED,      ///< Échec de publication MQTT
-
-    /* ---- Erreurs spécifiques NTP ---- */
-    ESP01_NTP_SYNC_ERROR = 400,    ///< Erreur de synchronisation NTP
-    ESP01_NTP_INVALID_RESPONSE,    ///< Réponse NTP invalide
-    ESP01_NTP_SERVER_NOT_REACHABLE ///< Serveur NTP inaccessible
-
-} ESP01_Status_t;
-
-/**
- * @brief  Structure contenant les informations système pour la page Device du serveur web
- */
-typedef struct {
-    char at_version[64];      ///< Version du firmware ESP01
-    char board_type[32];      ///< Type de carte STM32
-    char wifi_mode[16];       ///< Mode WiFi actuel
-    char wifi_ssid[32];       ///< SSID du réseau WiFi
-    char server_port[8];      ///< Port du serveur HTTP
-    char server_multiconn[8]; ///< État de la multi-connexion
-} esp01_system_info_t;
-
-/* ========================= VARIABLES GLOBALES ========================= */
+/* ========================= VARIABLES GLOBALES EXTERNES ========================= */
 extern UART_HandleTypeDef *g_esp_uart;   // UART principal ESP01
 extern UART_HandleTypeDef *g_debug_uart; // UART debug
 extern uint8_t *g_dma_rx_buf;            // Buffer DMA RX
@@ -126,16 +98,8 @@ extern uint16_t g_dma_buf_size;          // Taille buffer DMA
 extern volatile uint16_t g_rx_last_pos;  // Dernière position RX
 extern uint16_t g_server_port;           // Port serveur
 
-/* ========================= MACROS UTILES ============================== */
-
-// ----------- Log interne -----------
-/**
- * @brief  Log interne formaté sur l'UART de debug.
- * @param  fmt  Format printf.
- * @param  ...  Arguments variables.
- */
-void _esp_login(const char *fmt, ...); // Fonction de log interne
-
+/* ========================= MACROS UTILES & LOGS ============================== */
+void _esp_login(const char *fmt, ...);
 #define VALIDATE_PARAM_VOID(cond) \
     do                            \
     {                             \
@@ -150,16 +114,24 @@ void _esp_login(const char *fmt, ...); // Fonction de log interne
             return (errcode);         \
     } while (0)
 
-#define ESP01_LOG_INFO(module, fmt, ...) _esp_login("[" module "][INFO] " fmt, ##__VA_ARGS__)
-#define ESP01_LOG_ERROR(module, fmt, ...) _esp_login("[" module "][ERROR] " fmt, ##__VA_ARGS__)
-#define ESP01_LOG_WARN(module, fmt, ...) _esp_login("[" module "][WARN] " fmt, ##__VA_ARGS__)
-#define ESP01_LOG_DEBUG(module, fmt, ...) _esp_login("[" module "][DEBUG] " fmt, ##__VA_ARGS__)
+#define VALIDATE_PARAMS(errcode, ...) \
+    do                                \
+    {                                 \
+        if (!(__VA_ARGS__))           \
+            return (errcode);         \
+    } while (0)
 
-/**
- * @brief  Log d'erreur harmonisé et retourne le code d'erreur.
- * @param  prefix   Contexte ou nom de la fonction.
- * @param  status   Code de statut à retourner.
- */
+#define VALIDATE_PARAMS_VOID(...) \
+    do                            \
+    {                             \
+        if (!(__VA_ARGS__))       \
+            return;               \
+    } while (0)
+
+#define ESP01_LOG_DEBUG(module, fmt, ...) _esp_login("[" module "][DEBUG] " fmt "\r\n", ##__VA_ARGS__)
+#define ESP01_LOG_ERROR(module, fmt, ...) _esp_login("[" module "][ERROR] " fmt "\r\n", ##__VA_ARGS__)
+#define ESP01_LOG_WARN(module, fmt, ...) _esp_login("[" module "][WARN] " fmt "\r\n", ##__VA_ARGS__)
+
 #define ESP01_RETURN_ERROR(prefix, status)                                          \
     do                                                                              \
     {                                                                               \
@@ -167,330 +139,346 @@ void _esp_login(const char *fmt, ...); // Fonction de log interne
         return (status);                                                            \
     } while (0)
 
-/* ========================= FONCTIONS PRINCIPALES ====================== */
-
-// ----------- Initialisation & Driver -----------
+/* ========================= WRAPPERS API (COMMANDES AT HAUT NIVEAU) ========================= */
 
 /**
- * @brief  Teste la communication AT avec l'ESP01.
- * @retval ESP01_Status_t
+ * @brief Initialise le driver ESP01 (UART, DMA, variables globales).
+ * @param huart_esp UART pour l'ESP01
+ * @param huart_debug UART pour la console debug
+ * @param dma_rx_buf Buffer DMA RX
+ * @param dma_buf_size Taille du buffer DMA RX
+ * @retval ESP01_Status_t Statut de l'initialisation
+ */
+ESP01_Status_t esp01_init(UART_HandleTypeDef *huart_esp, UART_HandleTypeDef *huart_debug, uint8_t *dma_rx_buf, uint16_t dma_buf_size);
+
+/**
+ * @brief Teste la communication AT avec l'ESP01 (commande AT).
+ * @retval ESP01_Status_t Statut du test
  */
 ESP01_Status_t esp01_test_at(void);
 
 /**
- * @brief  Initialise le module ESP01 et configure les UART.
- * @param  huart_esp   UART principal pour l'ESP01.
- * @param  huart_debug UART pour le debug.
- * @param  dma_rx_buf  Buffer DMA RX.
- * @param  dma_buf_size Taille du buffer DMA.
- * @retval ESP01_Status_t
+ * @brief Effectue un reset logiciel du module ESP01 (AT+RST).
+ * @retval ESP01_Status_t Statut du reset
  */
-ESP01_Status_t esp01_init(UART_HandleTypeDef *huart_esp, UART_HandleTypeDef *huart_debug, uint8_t *dma_rx_buf, uint16_t dma_buf_size); // Initialisation                                                                                                // Test commande AT
+ESP01_Status_t esp01_reset(void);
 
 /**
- * @brief  Effectue un reset matériel du module ESP01.
- * @retval ESP01_Status_t
+ * @brief Restaure les paramètres usine du module ESP01 (AT+RESTORE).
+ * @retval ESP01_Status_t Statut de la restauration
  */
-ESP01_Status_t esp01_reset(void); // Reset module
+ESP01_Status_t esp01_restore(void);
 
 /**
- * @brief  Restaure les paramètres d'usine du module ESP01.
- * @retval ESP01_Status_t
+ * @brief Vide le buffer RX UART (flush DMA).
+ * @param timeout_ms Timeout en ms
+ * @retval ESP01_Status_t Statut du flush
  */
-ESP01_Status_t esp01_restore(void); // Restore usine
+ESP01_Status_t esp01_flush_rx_buffer(uint32_t timeout_ms);
 
 /**
- * @brief  Vide le buffer RX UART du module ESP01.
- * @param  timeout_ms Timeout en millisecondes.
- * @retval ESP01_Status_t
+ * @brief Récupère les nouveaux octets reçus depuis le dernier appel.
+ * @param buf Buffer de destination
+ * @param bufsize Taille du buffer
+ * @retval int Nombre d'octets lus
  */
-ESP01_Status_t esp01_flush_rx_buffer(uint32_t timeout_ms); // Flush RX
+int esp01_get_new_data(uint8_t *buf, uint16_t bufsize);
 
 /**
- * @brief  Récupère les nouvelles données reçues sur l'ESP01.
- * @param  buf     Buffer de destination.
- * @param  bufsize Taille du buffer.
- * @retval Nombre d'octets lus ou -1 en cas d'erreur.
+ * @brief Vide le buffer RX UART (interne, non bloquant).
+ * @param timeout_ms Timeout en ms
  */
-int esp01_get_new_data(uint8_t *buf, uint16_t bufsize); // Récupération nouvelle data
+void _flush_rx_buffer(uint32_t timeout_ms);
 
 /**
- * @brief  Vide le buffer RX interne (usage interne).
- * @param  timeout_ms Timeout en millisecondes.
+ * @brief Récupère la version AT du firmware ESP01 (AT+GMR).
+ * @param version_buf Buffer de sortie pour la version lue
+ * @param buf_size Taille du buffer de sortie
+ * @retval ESP01_Status_t Statut de la lecture (OK, erreur, overflow, etc.)
  */
-void _flush_rx_buffer(uint32_t timeout_ms); // Flush RX interne
-
-// ----------- Version & Infos -----------
+ESP01_Status_t esp01_get_at_version(char *version_buf, size_t buf_size);
 
 /**
- * @brief  Récupère la version du firmware AT de l'ESP01.
- * @param  version_buf Buffer de sortie.
- * @param  buf_size    Taille du buffer.
- * @retval ESP01_Status_t
+ * @brief Récupère la liste des commandes AT supportées.
+ * @param out Buffer de sortie pour la liste complète
+ * @param out_size Taille du buffer de sortie
+ * @retval ESP01_Status_t Statut de la lecture (OK, erreur, overflow, etc.)
  */
-ESP01_Status_t esp01_get_at_version(char *version_buf, size_t buf_size); // Version AT
-
-// ----------- UART -----------
+ESP01_Status_t esp01_get_cmd_list(char *out, size_t out_size);
 
 /**
- * @brief  Récupère la configuration UART actuelle de l'ESP01.
- * @param  out      Buffer de sortie.
- * @param  out_size Taille du buffer.
- * @retval ESP01_Status_t
+ * @brief Récupère la configuration UART actuelle du module ESP01.
+ * @param out Buffer de sortie pour la config brute
+ * @param out_size Taille du buffer de sortie
+ * @retval ESP01_Status_t Statut de la lecture (OK, erreur, overflow, etc.)
  */
-ESP01_Status_t esp01_get_uart_config(char *out, size_t out_size); // Get config UART
+ESP01_Status_t esp01_get_uart_config(char *out, size_t out_size);
 
 /**
- * @brief  Convertit la configuration UART brute en chaîne lisible.
- * @param  raw_config Configuration UART brute.
- * @param  out        Buffer de sortie.
- * @param  out_size   Taille du buffer.
- * @retval ESP01_Status_t
+ * @brief Configure l’UART du module ESP01.
+ * @param baud Baudrate à appliquer (ex: 115200)
+ * @param databits Nombre de bits de données (5 à 8)
+ * @param stopbits Nombre de bits de stop (1 ou 2)
+ * @param parity Parité (0:aucune, 1:impair, 2:pair)
+ * @param flowctrl Contrôle de flux (0:aucun, 1:RTS, 2:CTS, 3:RTS+CTS)
+ * @retval ESP01_Status_t Statut de la configuration (OK, erreur, overflow, etc.)
  */
-ESP01_Status_t esp01_uart_config_to_string(const char *raw_config, char *out, size_t out_size); // UART config to string
+ESP01_Status_t esp01_set_uart_config(uint32_t baud, uint8_t databits, uint8_t stopbits, uint8_t parity, uint8_t flowctrl);
 
 /**
- * @brief  Configure l'UART de l'ESP01.
- * @param  baud      Baudrate.
- * @param  databits  Nombre de bits de données.
- * @param  stopbits  Nombre de bits de stop.
- * @param  parity    Parité.
- * @param  flowctrl  Contrôle de flux.
- * @retval ESP01_Status_t
+ * @brief Récupère le mode sommeil actuel du module ESP01.
+ * @param mode Pointeur vers la variable de sortie (0: aucun, 1: light sleep, 2: deep sleep)
+ * @retval ESP01_Status_t Statut de la lecture (OK, erreur, etc.)
  */
-ESP01_Status_t esp01_set_uart_config(uint32_t baud, uint8_t databits, uint8_t stopbits, uint8_t parity, uint8_t flowctrl); // Set UART config
-
-// ----------- Mode sommeil -----------
+ESP01_Status_t esp01_get_sleep_mode(int *mode);
 
 /**
- * @brief  Récupère le mode sommeil actuel de l'ESP01.
- * @param  mode Pointeur vers la variable de sortie.
- * @retval ESP01_Status_t
+ * @brief Définit le mode sommeil du module ESP01.
+ * @param mode Mode sommeil à appliquer (0: aucun, 1: light sleep, 2: deep sleep)
+ * @retval ESP01_Status_t Statut de la configuration (OK, erreur, etc.)
  */
-ESP01_Status_t esp01_get_sleep_mode(int *mode); // Get sleep mode
+ESP01_Status_t esp01_set_sleep_mode(int mode);
 
 /**
- * @brief  Définit le mode sommeil de l'ESP01.
- * @param  mode Mode sommeil à définir.
- * @retval ESP01_Status_t
+ * @brief Récupère la puissance RF actuelle du module ESP01.
+ * @param dbm Pointeur vers la variable de sortie (valeur en dBm)
+ * @retval ESP01_Status_t Statut de la lecture (OK, erreur, etc.)
  */
-ESP01_Status_t esp01_set_sleep_mode(int mode); // Set sleep mode
+ESP01_Status_t esp01_get_rf_power(int *dbm);
 
 /**
- * @brief  Convertit le mode sommeil en chaîne lisible.
- * @param  mode      Mode sommeil.
- * @param  out       Buffer de sortie.
- * @param  out_size  Taille du buffer.
- * @retval ESP01_Status_t
+ * @brief Définit la puissance RF du module ESP01.
+ * @param dbm Puissance à appliquer (en dBm)
+ * @retval ESP01_Status_t Statut de la configuration (OK, erreur, etc.)
  */
-ESP01_Status_t esp01_sleep_mode_to_string(int mode, char *out, size_t out_size); // Sleep mode to string
-
-// ----------- Puissance RF -----------
+ESP01_Status_t esp01_set_rf_power(int dbm);
 
 /**
- * @brief  Récupère la puissance RF actuelle de l'ESP01.
- * @param  dbm Pointeur vers la variable de sortie (dBm).
- * @retval ESP01_Status_t
+ * @brief Récupère le niveau de log système du module ESP01.
+ * @param level Pointeur vers la variable de sortie
+ * @retval ESP01_Status_t Statut de la lecture
  */
-ESP01_Status_t esp01_get_rf_power(int *dbm); // Get RF power
+ESP01_Status_t esp01_get_syslog(int *level);
 
 /**
- * @brief  Définit la puissance RF de l'ESP01.
- * @param  dbm Puissance en dBm.
- * @retval ESP01_Status_t
+ * @brief Définit le niveau de log système du module ESP01.
+ * @param level Niveau de log à appliquer
+ * @retval ESP01_Status_t Statut de la configuration
  */
-ESP01_Status_t esp01_set_rf_power(int dbm); // Set RF power
-
-// ----------- Logs système -----------
+ESP01_Status_t esp01_set_syslog(int level);
 
 /**
- * @brief  Récupère le niveau de log système de l'ESP01.
- * @param  level Pointeur vers la variable de sortie.
- * @retval ESP01_Status_t
+ * @brief Récupère la RAM libre et la RAM minimale historique (AT+SYSRAM?).
  */
-ESP01_Status_t esp01_get_syslog(int *level); // Get syslog
+ESP01_Status_t esp01_get_sysram(uint32_t *free_ram, uint32_t *min_ram);
 
 /**
- * @brief  Définit le niveau de log système de l'ESP01.
- * @param  level Niveau de log à définir.
- * @retval ESP01_Status_t
+ * @brief Récupère la taille de la mémoire système (store).
+ * @param sysstore Pointeur vers la variable de sortie
+ * @retval ESP01_Status_t Statut de la lecture
  */
-ESP01_Status_t esp01_set_syslog(int level); // Set syslog
+ESP01_Status_t esp01_get_sysstore(uint32_t *sysstore);
+
+ESP01_Status_t esp01_get_sysflash(char *out, size_t out_size);
 
 /**
- * @brief  Convertit le niveau de log système en chaîne lisible.
- * @param  syslog    Niveau de log.
- * @param  out       Buffer de sortie.
- * @param  out_size  Taille du buffer.
- * @retval ESP01_Status_t
+ * @brief  Affiche la liste détaillée des partitions flash à partir de la réponse AT+SYSFLASH?.
+ * @param  sysflash_resp Réponse brute de la commande AT+SYSFLASH?.
+ * @retval Nombre de partitions affichées.
  */
-ESP01_Status_t esp01_syslog_to_string(int syslog, char *out, size_t out_size); // Syslog to string
-
-// ----------- RAM libre -----------
+uint8_t esp01_display_sysflash_partitions(const char *sysflash_resp);
 
 /**
- * @brief  Récupère la quantité de RAM libre sur l'ESP01.
- * @param  free_ram Pointeur vers la variable de sortie.
- * @retval ESP01_Status_t
+ * @brief Récupère la taille de la RAM utilisateur.
+ * @param userram Pointeur vers la variable de sortie
+ * @retval ESP01_Status_t Statut de la lecture
  */
-ESP01_Status_t esp01_get_sysram(uint32_t *free_ram); // Get RAM libre
-
-// ----------- Deep sleep -----------
+ESP01_Status_t esp01_get_userram(uint32_t *userram);
 
 /**
- * @brief  Met l'ESP01 en deep sleep pour une durée donnée.
- * @param  ms Durée en millisecondes.
- * @retval ESP01_Status_t
+ * @brief Met le module ESP01 en deep sleep pour une durée donnée.
+ * @param ms Durée en millisecondes
+ * @retval ESP01_Status_t Statut de la commande
  */
-ESP01_Status_t esp01_deep_sleep(uint32_t ms); // Deep sleep
+ESP01_Status_t esp01_deep_sleep(uint32_t ms);
 
-// ----------- Liste commandes AT -----------
+/* ========================= HELPERS (CONVERSION, AFFICHAGE, FORMATAGE HUMAIN) ========================= */
+/**
+ * @brief Affiche les informations firmware à partir de la réponse AT+GMR.
+ * @param gmr_resp Réponse brute AT+GMR
+ * @retval uint8_t 1 si affichage réussi, 0 sinon
+ */
+uint8_t esp01_display_firmware_info(const char *gmr_resp);
 
 /**
- * @brief  Récupère la liste des commandes AT supportées par l'ESP01.
- * @param  out      Buffer de sortie.
- * @param  out_size Taille du buffer.
- * @retval ESP01_Status_t
+ * @brief Convertit le mode sommeil en chaîne lisible.
+ * @param mode Mode sommeil
+ * @param out Buffer de sortie
+ * @param out_size Taille du buffer
+ * @retval ESP01_Status_t Statut de la conversion
  */
-ESP01_Status_t esp01_get_cmd_list(char *out, size_t out_size); // Liste commandes AT
-
-// ----------- Utilitaires & Debug -----------
+ESP01_Status_t esp01_sleep_mode_to_string(int mode, char *out, size_t out_size);
 
 /**
- * @brief  Retourne la chaîne correspondant à un code d'erreur ESP01.
- * @param  status Code d'erreur.
- * @retval Chaîne descriptive.
+ * @brief Convertit le niveau de log système en chaîne lisible.
+ * @param syslog Niveau de log
+ * @param out Buffer de sortie
+ * @param out_size Taille du buffer
+ * @retval ESP01_Status_t Statut de la conversion
  */
-const char *esp01_get_error_string(ESP01_Status_t status); // String erreur
+ESP01_Status_t esp01_syslog_to_string(int syslog, char *out, size_t out_size);
 
 /**
- * @brief  Attend un motif précis dans la réponse de l'ESP01.
- * @param  pattern    Motif à attendre.
- * @param  timeout_ms Timeout en millisecondes.
- * @retval ESP01_Status_t
+ * @brief Convertit la RAM libre et min en chaîne lisible.
+ * @param free_ram RAM libre
+ * @param min_ram RAM minimale
+ * @param out Buffer de sortie
+ * @param out_size Taille du buffer
+ * @retval ESP01_Status_t Statut de la conversion
  */
-ESP01_Status_t esp01_wait_for_pattern(const char *pattern, uint32_t timeout_ms); // Attente motif
+ESP01_Status_t esp01_sysram_to_string(uint32_t free_ram, uint32_t min_ram, char *out, size_t out_size);
 
 /**
- * @brief  Envoie une commande AT brute via DMA et récupère la réponse.
- * @param  cmd          Commande à envoyer.
- * @param  resp         Buffer de réponse.
- * @param  resp_size    Taille du buffer de réponse.
- * @param  wait_pattern Motif d'attente dans la réponse.
- * @param  timeout_ms   Timeout en millisecondes.
- * @retval ESP01_Status_t
+ * @brief Convertit la taille de la mémoire système (store) en chaîne lisible.
+ * @param sysstore Taille mémoire système
+ * @param out Buffer de sortie
+ * @param out_size Taille du buffer
+ * @retval ESP01_Status_t Statut de la conversion
  */
-ESP01_Status_t esp01_send_raw_command_dma(const char *cmd, char *resp, size_t resp_size, const char *wait_pattern, uint32_t timeout_ms); // Envoi commande brute
-
-/* ==================== OUTILS DE PARSING ==================== */
+ESP01_Status_t esp01_sysstore_to_string(uint32_t sysstore, char *out, size_t out_size);
 
 /**
- * @brief  (Interne) Supprime les espaces/retours en début et fin de chaîne.
- * @param  str  Chaîne à nettoyer.
+ * @brief Convertit la taille de la mémoire flash système en chaîne lisible.
+ * @param sysflash Taille mémoire flash
+ * @param out Buffer de sortie
+ * @param out_size Taille du buffer
+ * @retval ESP01_Status_t Statut de la conversion
+ */
+ESP01_Status_t esp01_sysflash_to_string(uint32_t sysflash, char *out, size_t out_size);
+
+/**
+ * @brief Convertit la taille de la RAM utilisateur en chaîne lisible.
+ * @param userram Taille RAM utilisateur
+ * @param out Buffer de sortie
+ * @param out_size Taille du buffer
+ * @retval ESP01_Status_t Statut de la conversion
+ */
+ESP01_Status_t esp01_userram_to_string(uint32_t userram, char *out, size_t out_size);
+
+/**
+ * @brief Formate une taille en octets en chaîne lisible (Ko, Mo).
+ * @param bytes Taille en octets
+ * @param output Buffer de sortie
+ * @param size Taille du buffer
+ * @retval char* Pointeur vers la chaîne formatée
+ */
+char *esp01_format_size(size_t bytes, char *output, size_t size);
+
+/**
+ * @brief Convertit la configuration UART brute en chaîne lisible.
+ * @param raw_config Chaîne brute
+ * @param out Buffer de sortie
+ * @param out_size Taille du buffer
+ * @retval ESP01_Status_t Statut de la conversion
+ */
+ESP01_Status_t esp01_uart_config_to_string(const char *raw_config, char *out, size_t out_size);
+
+/* ========================= OUTILS DE PARSING ========================= */
+/**
+ * @brief Parse un entier après un motif dans une chaîne.
+ * @param text Chaîne source
+ * @param pattern Motif à chercher
+ * @param result Pointeur vers la valeur extraite
+ * @retval ESP01_Status_t Statut du parsing
+ */
+ESP01_Status_t esp01_parse_int_after(const char *text, const char *pattern, int32_t *result);
+
+/**
+ * @brief Parse une chaîne après un motif dans une chaîne source.
+ * @param text Chaîne source
+ * @param pattern Motif à chercher
+ * @param output Buffer de sortie
+ * @param size Taille du buffer
+ * @retval ESP01_Status_t Statut du parsing
+ */
+ESP01_Status_t esp01_parse_string_after(const char *text, const char *pattern, char *output, size_t size);
+
+/**
+ * @brief Extrait une valeur entre guillemets après un motif.
+ * @param src Source
+ * @param motif Motif à chercher
+ * @param out Buffer de sortie
+ * @param out_len Taille du buffer
+ * @retval bool true si trouvé, false sinon
+ */
+bool esp01_extract_quoted_value(const char *src, const char *motif, char *out, size_t out_len);
+
+/**
+ * @brief Parse un booléen après un tag dans une réponse.
+ * @param resp Réponse source
+ * @param tag Tag à chercher
+ * @param out Pointeur vers la valeur extraite
+ * @retval ESP01_Status_t Statut du parsing
+ */
+ESP01_Status_t esp01_parse_bool_after(const char *resp, const char *tag, bool *out);
+
+/**
+ * @brief Découpe une réponse multi-lignes en lignes distinctes.
+ * @param input_str Chaîne source
+ * @param lines Tableau de pointeurs de lignes
+ * @param max_lines Nombre max de lignes
+ * @param lines_buffer Buffer pour les lignes
+ * @param buffer_size Taille du buffer
+ * @param skip_empty Sauter les lignes vides
+ * @retval uint8_t Nombre de lignes extraites
+ */
+uint8_t esp01_split_response_lines(const char *input_str, char *lines[], uint8_t max_lines, char *lines_buffer, size_t buffer_size, bool skip_empty);
+
+/* ========================= OUTILS UTILITAIRES (BUFFER, INLINE, VALIDATION) ========================= */
+
+/**
+ * @brief Retourne une chaîne descriptive correspondant au code d'erreur ESP01 fourni.
+ *
+ * Cette fonction traduit un code de statut ESP01_Status_t en un message d'erreur lisible.
+ *
+ * @param status Code de statut ESP01_Status_t à traduire.
+ * @return Pointeur constant vers une chaîne décrivant l'erreur.
+ */
+const char *esp01_get_error_string(ESP01_Status_t status);
+
+/**
+ * @brief Attend l'apparition d'un motif dans la réponse UART.
+ * @param pattern Motif à attendre
+ * @param timeout_ms Timeout en ms
+ * @retval ESP01_Status_t Statut de l'attente
+ */
+ESP01_Status_t esp01_wait_for_pattern(const char *pattern, uint32_t timeout_ms);
+
+/**
+ * @brief Envoie une commande AT brute en DMA et attend une réponse.
+ * @param cmd Commande AT à envoyer
+ * @param resp Buffer de réponse
+ * @param resp_size Taille du buffer réponse
+ * @param wait_pattern Motif d'attente
+ * @param timeout_ms Timeout en ms
+ * @retval ESP01_Status_t Statut de la commande
+ */
+ESP01_Status_t esp01_send_raw_command_dma(const char *cmd, char *resp, size_t resp_size, const char *wait_pattern, uint32_t timeout_ms);
+
+/**
+ * @brief Supprime les espaces en début et fin de chaîne.
+ * @param str Chaîne à nettoyer
  */
 void _esp_trim_string(char *str);
 
 /**
- * @brief  Extrait un entier après un motif dans une réponse.
- * @param  resp    Réponse source.
- * @param  pattern Motif à rechercher.
- * @param  out     Pointeur vers la variable de sortie.
- * @retval ESP01_Status_t
+ * @brief Copie une chaîne source dans une destination de façon sécurisée.
+ * @param dst Buffer de destination
+ * @param dst_size Taille du buffer destination
+ * @param src Chaîne source
+ * @retval ESP01_Status_t Statut de la copie
  */
-ESP01_Status_t esp01_parse_int_after(const char *resp, const char *pattern, int32_t *out); // Parse int après motif
-
-/**
- * @brief  Extrait une chaîne après un motif dans une réponse.
- * @param  resp      Réponse source.
- * @param  pattern   Motif à rechercher.
- * @param  out       Buffer de sortie.
- * @param  out_size  Taille du buffer.
- * @retval ESP01_Status_t
- */
-ESP01_Status_t esp01_parse_string_after(const char *resp, const char *pattern, char *out, size_t out_size); // Parse string après motif
-
-/**
- * @brief  Extrait une valeur entre guillemets après un motif.
- * @param  src      Chaîne source.
- * @param  motif    Motif à rechercher.
- * @param  out      Buffer de sortie.
- * @param  out_len  Taille du buffer.
- * @retval true si trouvé, false sinon.
- */
-bool esp01_extract_quoted_value(const char *src, const char *motif, char *out, size_t out_len); // Extraction valeur entre guillemets
-
-/**
- * @brief  Extrait un booléen après un motif dans une réponse.
- * @param  resp Réponse source.
- * @param  tag  Motif à rechercher.
- * @param  out  Pointeur vers la variable de sortie.
- * @retval ESP01_Status_t
- */
-ESP01_Status_t esp01_parse_bool_after(const char *resp, const char *tag, bool *out); // Parse bool après motif
-
-/* ========================= TERMINAL AT (CONSOLE) ======================= */
-
-/**
- * @brief  Démarre le terminal AT sur l'UART de debug.
- * @param  huart_debug UART de debug.
- */
-void esp01_terminal_begin(UART_HandleTypeDef *huart_debug); // Démarrage terminal AT
-
-/**
- * @brief  Callback RX pour la console AT.
- * @param  huart UART concerné.
- */
-void esp01_console_rx_callback(UART_HandleTypeDef *huart); // Callback RX console
-
-/**
- * @brief  Tâche principale de la console AT.
- */
-void esp01_console_task(void); // Tâche console
-
-/* ========================= MANQUANT : PROTOTYPES MANQUANTS ======================= */
-
-/**
- * @brief  Tâche de gestion du terminal AT interactif (console).
- */
-void esp01_console_task(void);
-
-/**
- * @brief  Callback de réception UART pour la console AT.
- * @param  huart Pointeur sur la structure UART.
- */
-void esp01_console_rx_callback(UART_HandleTypeDef *huart);
-
-/**
- * @brief  Divise une réponse AT en lignes individuelles
- * @param  input_str     Chaîne d'entrée à diviser
- * @param  lines         Tableau de pointeurs pour stocker les lignes
- * @param  max_lines     Nombre maximum de lignes à extraire
- * @param  lines_buffer  Buffer pour stocker les copies des lignes
- * @param  buffer_size   Taille du buffer de lignes
- * @param  skip_empty    True pour ignorer les lignes vides
- * @return Nombre de lignes extraites
- * @note   Cette fonction peut être utilisée pour toute réponse AT multi-lignes
- */
-uint8_t esp01_split_response_lines(const char *input_str, char *lines[],
-                                   uint8_t max_lines, char *lines_buffer,
-                                   size_t buffer_size, bool skip_empty);
-
-/**
- * @brief  Extrait et affiche les lignes d'informations du firmware ESP01
- * @param  gmr_resp Réponse brute de la commande AT+GMR
- * @return Nombre de lignes extraites
- */
-uint8_t esp01_display_firmware_info(const char *gmr_resp);
-
-/* ========================= INLINE UTILS ========================= */
-/**
- * @brief  Copie sécurisée d'une chaîne dans un buffer.
- * @param  dst      Buffer de destination.
- * @param  dst_size Taille du buffer.
- * @param  src      Chaîne source.
- * @retval ESP01_Status_t
- */
-static inline ESP01_Status_t esp01_safe_strcpy(char *dst, size_t dst_size, const char *src) // Copie sécurisée string
+static inline ESP01_Status_t esp01_safe_strcpy(char *dst, size_t dst_size, const char *src)
 {
     if (!dst || !src || dst_size == 0)
         return ESP01_INVALID_PARAM;
@@ -501,15 +489,61 @@ static inline ESP01_Status_t esp01_safe_strcpy(char *dst, size_t dst_size, const
 }
 
 /**
- * @brief Vérifie si un buffer a assez de place pour une écriture.
- * @param needed   Nombre d'octets nécessaires.
- * @param avail    Espace disponible.
- * @retval ESP01_Status_t
+ * @brief Vérifie si la taille disponible est suffisante pour le besoin.
+ * @param needed Taille nécessaire
+ * @param avail Taille disponible
+ * @retval ESP01_Status_t Statut de la vérification
  */
-static inline ESP01_Status_t esp01_check_buffer_size(size_t needed, size_t avail) // Vérification taille buffer
+static inline ESP01_Status_t esp01_check_buffer_size(size_t needed, size_t avail)
 {
     return (needed > avail) ? ESP01_BUFFER_OVERFLOW : ESP01_OK;
 }
 
+/**
+ * @brief Vérifie si un pointeur est valide (non NULL).
+ * @param ptr Pointeur à tester
+ * @retval bool true si valide, false sinon
+ */
+static inline bool esp01_is_valid_ptr(const void *ptr)
+{
+    return (ptr != NULL);
+}
+
+/**
+ * @brief Concatène une chaîne source à une destination de façon sécurisée.
+ * @param dst Buffer de destination
+ * @param dst_size Taille du buffer destination
+ * @param src Chaîne source
+ * @retval ESP01_Status_t Statut de la concaténation
+ */
+static inline ESP01_Status_t esp01_safe_strcat(char *dst, size_t dst_size, const char *src)
+{
+    if (!dst || !src || dst_size == 0)
+        return ESP01_INVALID_PARAM;
+    size_t dst_len = strlen(dst);
+    size_t src_len = strlen(src);
+    if (dst_len + src_len + 1 > dst_size)
+        return ESP01_BUFFER_OVERFLOW;
+    strcat(dst, src);
+    return ESP01_OK;
+}
+
+/* ========================= TERMINAL / CONSOLE AT ========================= */
+/**
+ * @brief Initialise le terminal AT sur l'UART debug.
+ * @param huart_debug UART debug
+ */
+void esp01_terminal_begin(UART_HandleTypeDef *huart_debug);
+
+/**
+ * @brief Callback de réception UART pour la console AT.
+ * @param huart UART concerné
+ */
+void esp01_console_rx_callback(UART_HandleTypeDef *huart);
+
+/**
+ * @brief Tâche principale de gestion du terminal AT (à appeler en boucle).
+ */
+void esp01_console_task(void);
 
 #endif /* STM32_WIFIESP_H_ */

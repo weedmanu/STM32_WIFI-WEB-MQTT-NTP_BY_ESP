@@ -139,7 +139,8 @@ int main(void)
 	HAL_Delay(1000);
 	ESP01_Status_t status;
 	char buf[ESP01_MAX_RESP_BUF], ip[ESP01_MAX_IP_LEN], mac[ESP01_MAX_MAC_LEN], hostname[ESP01_MAX_HOSTNAME_LEN];
-	int mode = 0, rssi = 0;
+	uint8_t mode = 0;
+	int rssi = 0;
 	bool dhcp = false;
 	uint8_t found = 0;
 	esp01_network_t networks[ESP01_MAX_SCAN_NETWORKS];
@@ -311,8 +312,7 @@ int main(void)
 		   (status == ESP01_OK) ? esp01_ap_config_to_string(resp) : esp01_get_error_string(status));
 	HAL_Delay(500);
 
-	printf("\n[TEST][INFO] === Attente de connexions au point d'accès (10 secondes) ===\r\n");
-	HAL_Delay(10000);
+	printf("\n[TEST][INFO] ===Point d'accès créé ===\r\n");
 
 	printf("\n[TEST][INFO] === Fin des tests du module WiFi ===\r\n");
 	/* USER CODE END 2 */

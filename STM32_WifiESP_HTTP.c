@@ -37,6 +37,10 @@
 // ==================== DEFINES ====================
 #define ESP01_CONN_TIMEOUT_MS 30000 ///< Timeout de connexion TCP (ms)
 
+// ==================== CONSTANTES SPÉCIFIQUES AU MODULE ====================
+#define ESP01_HTTP_REQUEST_TIMEOUT 5000   // Timeout requête HTTP (ms)
+#define ESP01_HTTP_RESPONSE_TIMEOUT 10000 // Timeout réponse HTTP (ms)
+
 // ==================== VARIABLES GLOBALES ====================
 connection_info_t g_connections[ESP01_MAX_CONNECTIONS] = {0}; // Tableau des connexions TCP actives
 int g_connection_count = ESP01_MAX_CONNECTIONS;               // Nombre maximal de connexions
@@ -204,7 +208,7 @@ ESP01_Status_t esp01_http_start_server(uint16_t port)
     ESP01_Status_t st = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), "OK", ESP01_TIMEOUT_SHORT); // Envoie la commande AT
     if (st != ESP01_OK)                                                                                 // Vérifie le statut de la commande
         ESP01_RETURN_ERROR("HTTP_SERVER", st);                                                          // Retourne une erreur si échec
-    ESP01_LOG_INFO("HTTP", "Serveur HTTP démarré sur le port %u", port);                                // Log la réussite
+    ESP01_LOG_DEBUG("HTTP", "Serveur HTTP démarré sur le port %u", port);                               // Log la réussite
     g_server_port = port;                                                                               // Enregistre le port du serveur dans la variable globale
     return ESP01_OK;                                                                                    // Retourne OK
 }
@@ -220,7 +224,7 @@ ESP01_Status_t esp01_http_stop_server(void)
     ESP01_Status_t st = esp01_send_raw_command_dma("AT+CIPSERVER=0", resp, sizeof(resp), "OK", ESP01_TIMEOUT_SHORT); // Envoie la commande AT pour arrêter le serveur
     if (st != ESP01_OK)                                                                                              // Vérifie le statut de la commande
         ESP01_RETURN_ERROR("HTTP_STOP", st);                                                                         // Retourne une erreur si échec
-    ESP01_LOG_INFO("HTTP", "Serveur HTTP arrêté");                                                                   // Log la réussite
+    ESP01_LOG_DEBUG("HTTP", "Serveur HTTP arrêté");                                                                  // Log la réussite
     return ESP01_OK;                                                                                                 // Retourne OK
 }
 
@@ -500,11 +504,14 @@ ESP01_Status_t esp01_http_close_connection(int conn_id)
     snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%d", conn_id);                                              // Prépare la commande AT+CIPCLOSE
     char resp[ESP01_MAX_RESP_BUF];                                                                      // Buffer pour la réponse AT
     ESP01_Status_t st = esp01_send_raw_command_dma(cmd, resp, sizeof(resp), "OK", ESP01_TIMEOUT_SHORT); // Envoie la commande AT
-    if (st != ESP01_OK)                                                                                 // Vérifie le statut
-        ESP01_RETURN_ERROR("HTTP_CLOSE", st);                                                           // Retourne une erreur si échec
-    g_connections[conn_id].is_active = 0;                                                               // Marque la connexion comme inactive
-    ESP01_LOG_INFO("HTTP", "Connexion %d fermée", conn_id);                                             // Log la réussite
-    return ESP01_OK;                                                                                    // Retourne OK
+    if (st != ESP01_OK)
+    {
+        ESP01_LOG_WARN("HTTP_CLOSE", "Fermeture connexion %d : échec ou timeout (code=%d)", conn_id, st);
+        return st;
+    }
+    g_connections[conn_id].is_active = 0;                    // Marque la connexion comme inactive
+    ESP01_LOG_DEBUG("HTTP", "Connexion %d fermée", conn_id); // Log la réussite
+    return ESP01_OK;                                         // Retourne OK
 }
 
 /**
@@ -529,8 +536,8 @@ void esp01_print_connection_status(void)
 {
     for (int i = 0; i < ESP01_MAX_CONNECTIONS; ++i) // Parcours toutes les connexions
     {
-        if (g_connections[i].is_active)                                                            // Si la connexion est active
-            ESP01_LOG_INFO("HTTP", "Connexion %d active, IP : %s", i, g_connections[i].client_ip); // Log l'état de la connexion
+        if (g_connections[i].is_active)                                                             // Si la connexion est active
+            ESP01_LOG_DEBUG("HTTP", "Connexion %d active, IP : %s", i, g_connections[i].client_ip); // Log l'état de la connexion
     }
 }
 
@@ -595,27 +602,29 @@ void esp01_process_requests(void)
 
                 ESP01_LOG_DEBUG("HTTP", "IPD reçu (brut) :\n%s", http_buf); // Log la requête brute
 
-                http_parsed_request_t req;                                                // Structure pour la requête parsée
-                if (esp01_parse_http_request(http_buf, &req) == ESP01_OK && req.is_valid) // Parse la requête HTTP
+                http_parsed_request_t req; // Structure pour la requête parsée
+                if (esp01_parse_http_request(http_buf, &req) == ESP01_OK && req.is_valid)
                 {
-                    if (strcmp(req.path, "/favicon.ico") == 0) // Si la requête concerne favicon.ico
+                    if (strcmp(req.path, "/favicon.ico") == 0)
                     {
-                        ESP01_LOG_DEBUG("HTTP", "favicon.ico demandé, réponse 204 No Content"); // Log la détection
-                        esp01_send_http_response(ipd.conn_id, 204, "image/x-icon", NULL, 0);    // Répond avec 204 No Content
-                        goto cleanup;                                                           // Passe au nettoyage
+                        ESP01_LOG_DEBUG("HTTP", "favicon.ico demandé, réponse 204 No Content");
+                        esp01_send_http_response(ipd.conn_id, 204, "image/x-icon", NULL, 0);
+                        goto cleanup;
                     }
-
-                    ESP01_LOG_DEBUG("HTTP", "Appel du handler pour la route : %s", req.path); // Log l'appel du handler
-                    esp01_route_handler_t handler = esp01_find_route_handler(req.path);       // Recherche le handler pour la route
-                    if (handler)                                                              // Si un handler est trouvé
-                        handler(ipd.conn_id, &req);                                           // Appelle le handler
                     else
-                        esp01_send_404_response(ipd.conn_id); // Sinon, envoie une 404
+                    {
+                        ESP01_LOG_DEBUG("HTTP", "Appel du handler pour la route : %s", req.path);
+                        esp01_route_handler_t handler = esp01_find_route_handler(req.path);
+                        if (handler)
+                            handler(ipd.conn_id, &req);
+                        else
+                            esp01_send_404_response(ipd.conn_id);
+                    }
                 }
                 else
                 {
-                    ESP01_LOG_DEBUG("HTTP", "Parsing HTTP échoué, envoi d'une 404"); // Log l'échec du parsing
-                    esp01_send_404_response(ipd.conn_id);                            // Envoie une 404
+                    ESP01_LOG_DEBUG("HTTP", "Parsing HTTP échoué, envoi d'une 404");
+                    esp01_send_404_response(ipd.conn_id);
                 }
 
             cleanup:
@@ -708,8 +717,10 @@ ESP01_Status_t esp01_http_get_server_status(uint8_t *is_server, uint16_t *port)
     // Récupérer le port configuré (variable globale)
     *port = g_server_port;
 
-    ESP01_LOG_INFO("HTTP", "Statut serveur: %s (port %u)",
-                   *is_server ? "Actif" : "Inactif", *port);
+    ESP01_LOG_DEBUG("HTTP", "Statut serveur: %s (port %u)",
+                    *is_server ? "Actif" : "Inactif", *port);
 
     return ESP01_OK;
 } // Fin de esp01_http_get_server_status
+
+// ========================= FIN DU MODULE =========================

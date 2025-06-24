@@ -67,8 +67,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SSID "XXXXXXXX"				  // Nom du réseau WiFi
+#define SSID "XXXXXXXX"               // Nom du réseau WiFi
 #define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
+#define BROKER_IP "192.168.XXX.XXX"   // Adresse IP du broker MQTT
+#define BROKER_PORT 1883              // Port du broker MQTT
+#define BROKER_TOPIC "stm32/test"     // Topic MQTT auquel s'abonner
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -198,15 +201,12 @@ int main(void)
   }
   HAL_Delay(500);
 
-  // Connexion MQTT
   printf("\n[TEST][INFO] === Connexion au broker MQTT ===\r\n");
-  char broker_ip[] = "192.168.1.185";
-  uint16_t broker_port = 1883;
   char client_id[16];
   snprintf(client_id, sizeof(client_id), "stm32_%lu", HAL_GetTick() & 0xFFFF);
 
-  printf("[TEST][INFO] Broker : %s:%d, Client ID : %s\r\n", broker_ip, broker_port, client_id);
-  status = esp01_mqtt_connect(broker_ip, broker_port, client_id, NULL, NULL);
+  printf("[TEST][INFO] Broker : %s:%d, Client ID : %s\r\n", BROKER_IP, BROKER_PORT, client_id);
+  status = esp01_mqtt_connect(BROKER_IP, BROKER_PORT, client_id, NULL, NULL);
   printf("[TEST][INFO] Connexion broker MQTT : %s\r\n", esp01_get_error_string(status));
   if (status != ESP01_OK)
   {
@@ -217,9 +217,8 @@ int main(void)
 
   // Abonnement
   printf("\n[TEST][INFO] === Abonnement au topic MQTT ===\r\n");
-  const char *topic = "stm32/test";
-  status = esp01_mqtt_subscribe(topic, 0);
-  printf("[TEST][INFO] Abonnement au topic \"%s\" : %s\r\n", topic, esp01_get_error_string(status));
+  status = esp01_mqtt_subscribe(BROKER_TOPIC, 0);
+  printf("[TEST][INFO] Abonnement au topic \"%s\" : %s\r\n", BROKER_TOPIC, esp01_get_error_string(status));
   if (status != ESP01_OK)
   {
     printf("[TEST][ERROR] Échec d'abonnement au topic\r\n");
@@ -233,7 +232,7 @@ int main(void)
   printf("[TEST][INFO] Callback de réception configuré\r\n");
 
   printf("\n[TEST][INFO] === Démarrage de la boucle d'écoute MQTT ===\r\n");
-  printf("[TEST][INFO] En attente de messages sur le topic \"%s\"...\r\n", topic);
+  printf("[TEST][INFO] En attente de messages sur le topic \"%s\"...\r\n", BROKER_TOPIC);
 
   // Boucle principale : juste réception et clignotement LED
   while (1)
