@@ -11,6 +11,8 @@ Cette bibliothèque fournit un driver complet pour contrôler les modules WiFi E
 
 ## Installation et configuration
 
+[STM32Guide](http://www.nasfamilyone.synology.me/STM32Guide/)
+
 ### Prérequis matériels
 - Carte STM32 (testé sur STM32L476RG)
 - Module ESP01/ESP8266
@@ -56,7 +58,7 @@ STM32_WifiESP.h/.c       → Driver de base et commandes AT
 1. Vérifier ce qu'il reste à factoriser, finir de commenter.
 2. Faire la liste des wrappers et helpers utiles manquants, ajouter les plus utiles.
 3. Expliquer un template type pour en ajouter en respectant le std.
-4. Faire le tutoriel sur le site web.
+4. Finir le tutoriel sur le site web .
 
 ## Standards de code appliqués
 
