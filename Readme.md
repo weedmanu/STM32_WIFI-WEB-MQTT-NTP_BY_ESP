@@ -11,7 +11,7 @@ Cette bibliothèque fournit un driver complet pour contrôler les modules WiFi E
 
 ## Installation et configuration
 
-[STM32Guide](http://www.nasfamilyone.synology.me/STM32Guide/)
+Site web directe : [STM32Guide](http://www.nasfamilyone.synology.me/STM32Guide/) ou par l'onglet STM32 de celui-ci : [TutoElectroWeb](http://www.nasfamilyone.synology.me/TutoElectroWeb/)
 
 ### Prérequis matériels
 - Carte STM32 (testé sur STM32L476RG)
