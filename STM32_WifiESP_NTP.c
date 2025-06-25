@@ -334,12 +334,7 @@ ESP01_Status_t esp01_get_ntp_time(char *datetime_buf, size_t bufsize)
         ESP01_RETURN_ERROR("NTP_GET_TIME", st);                                          // Retourne l'erreur
     }
 
-    // Nettoyer la chaîne en supprimant les espaces et guillemets au début
-    char *ptr = datetime_buf;
-    while (*ptr == ' ' || *ptr == '\t' || *ptr == '\"')
-        ptr++;
-    if (ptr != datetime_buf)
-        memmove(datetime_buf, ptr, strlen(ptr) + 1);
+    esp01_trim_string(datetime_buf);
 
     if (strlen(datetime_buf) < ESP01_NTP_MIN_DATE_LEN) // Vérification de la longueur minimale
     {

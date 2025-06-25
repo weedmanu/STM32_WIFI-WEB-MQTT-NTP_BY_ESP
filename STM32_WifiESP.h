@@ -139,7 +139,7 @@ void _esp_login(const char *fmt, ...);
         return (status);                                                            \
     } while (0)
 
-/* ========================= WRAPPERS API (COMMANDES AT HAUT NIVEAU) ========================= */
+/* ========================= FONCTIONS PRINCIPALES (initialisation, gestion du module, buffer, etc.) ========================= */
 
 /**
  * @brief Initialise le driver ESP01 (UART, DMA, variables globales).
@@ -150,24 +150,6 @@ void _esp_login(const char *fmt, ...);
  * @retval ESP01_Status_t Statut de l'initialisation
  */
 ESP01_Status_t esp01_init(UART_HandleTypeDef *huart_esp, UART_HandleTypeDef *huart_debug, uint8_t *dma_rx_buf, uint16_t dma_buf_size);
-
-/**
- * @brief Teste la communication AT avec l'ESP01 (commande AT).
- * @retval ESP01_Status_t Statut du test
- */
-ESP01_Status_t esp01_test_at(void);
-
-/**
- * @brief Effectue un reset logiciel du module ESP01 (AT+RST).
- * @retval ESP01_Status_t Statut du reset
- */
-ESP01_Status_t esp01_reset(void);
-
-/**
- * @brief Restaure les paramètres usine du module ESP01 (AT+RESTORE).
- * @retval ESP01_Status_t Statut de la restauration
- */
-ESP01_Status_t esp01_restore(void);
 
 /**
  * @brief Vide le buffer RX UART (flush DMA).
@@ -184,206 +166,147 @@ ESP01_Status_t esp01_flush_rx_buffer(uint32_t timeout_ms);
  */
 int esp01_get_new_data(uint8_t *buf, uint16_t bufsize);
 
-/**
- * @brief Vide le buffer RX UART (interne, non bloquant).
- * @param timeout_ms Timeout en ms
- */
-void _flush_rx_buffer(uint32_t timeout_ms);
+/* ========================= WRAPPERS AT & HELPERS ASSOCIÉS (par commande AT) ========================= */
 
 /**
- * @brief Récupère la version AT du firmware ESP01 (AT+GMR).
- * @param version_buf Buffer de sortie pour la version lue
- * @param buf_size Taille du buffer de sortie
- * @retval ESP01_Status_t Statut de la lecture (OK, erreur, overflow, etc.)
+ * @defgroup ESP01_AT_WRAPPERS Wrappers AT et helpers associés (par commande AT)
+ * @brief  Fonctions exposant chaque commande AT à l'utilisateur, avec leurs helpers de parsing/affichage.
+ *
+ * | Commande AT      | Wrapper principal(s)                | Helpers associés                        | Description courte                  |
+ * |------------------|-------------------------------------|-----------------------------------------|-------------------------------------|
+ * | AT               | esp01_test_at                       | INUTILE                                 | Teste la communication AT           |
+ * | AT+RST           | esp01_reset                         | INUTILE                                 | Redémarre le module                 |
+ * | AT+RESTORE       | esp01_restore                       | INUTILE                                 | Restaure les paramètres par défaut  |
+ * | AT+GMR           | esp01_get_at_version                | esp01_display_firmware_info             | Informations de version             |
+ * | AT+CMD           | esp01_get_cmd_list                  | INUTILE                                 | Liste les commandes AT supportées   |
+ * | AT+GSLP          | esp01_deep_sleep                    | INUTILE                                 | Mode deep sleep                     |
+ * | AT+SLEEP         | esp01_get_sleep_mode                | esp01_sleep_mode_to_string              | Mode de sommeil                     |
+ * |                  | esp01_set_sleep_mode                | esp01_sleep_mode_to_string              |                                     |
+ * | AT+SYSRAM        | esp01_get_sysram                    | esp01_sysram_to_string                  | Utilisation RAM                     |
+ * | AT+SYSFLASH      | esp01_get_sysflash                  | esp01_sysflash_to_string                | Partitions flash                    |
+ * |                  |                                     | esp01_display_sysflash_partitions        |                                     |
+ * | AT+RFPOWER       | esp01_get_rf_power                  | esp01_rf_power_to_string                | Puissance RF                        |
+ * |                  | esp01_set_rf_power                  | INUTILE                                 |                                     |
+ * | AT+SYSLOG        | esp01_get_syslog                    | esp01_syslog_to_string                  | Journaux de debug                   |
+ * |                  | esp01_set_syslog                    | esp01_syslog_to_string                  |                                     |
+ * | AT+SYSSTORE      | esp01_get_sysstore                  | esp01_sysstore_to_string                | Mode de stockage                    |
+ * | AT+USERRAM       | esp01_get_userram                   | esp01_userram_to_string                 | RAM utilisateur                     |
+ * | AT+UART          | esp01_get_uart_config               | esp01_uart_config_to_string             | Paramètres UART                     |
+ * |                  | esp01_set_uart_config               | esp01_uart_config_to_string             |                                     |
+ */
+
+/**
+ * @brief Teste la communication AT (AT)
+ */
+ESP01_Status_t esp01_test_at(void);
+
+/**
+ * @brief Redémarre le module (AT+RST)
+ */
+ESP01_Status_t esp01_reset(void);
+
+/**
+ * @brief Restaure les paramètres usine (AT+RESTORE)
+ */
+ESP01_Status_t esp01_restore(void);
+
+/**
+ * @brief Récupère la version AT du firmware (AT+GMR)
  */
 ESP01_Status_t esp01_get_at_version(char *version_buf, size_t buf_size);
-
 /**
- * @brief Récupère la liste des commandes AT supportées.
- * @param out Buffer de sortie pour la liste complète
- * @param out_size Taille du buffer de sortie
- * @retval ESP01_Status_t Statut de la lecture (OK, erreur, overflow, etc.)
- */
-ESP01_Status_t esp01_get_cmd_list(char *out, size_t out_size);
-
-/**
- * @brief Récupère la configuration UART actuelle du module ESP01.
- * @param out Buffer de sortie pour la config brute
- * @param out_size Taille du buffer de sortie
- * @retval ESP01_Status_t Statut de la lecture (OK, erreur, overflow, etc.)
- */
-ESP01_Status_t esp01_get_uart_config(char *out, size_t out_size);
-
-/**
- * @brief Configure l’UART du module ESP01.
- * @param baud Baudrate à appliquer (ex: 115200)
- * @param databits Nombre de bits de données (5 à 8)
- * @param stopbits Nombre de bits de stop (1 ou 2)
- * @param parity Parité (0:aucune, 1:impair, 2:pair)
- * @param flowctrl Contrôle de flux (0:aucun, 1:RTS, 2:CTS, 3:RTS+CTS)
- * @retval ESP01_Status_t Statut de la configuration (OK, erreur, overflow, etc.)
- */
-ESP01_Status_t esp01_set_uart_config(uint32_t baud, uint8_t databits, uint8_t stopbits, uint8_t parity, uint8_t flowctrl);
-
-/**
- * @brief Récupère le mode sommeil actuel du module ESP01.
- * @param mode Pointeur vers la variable de sortie (0: aucun, 1: light sleep, 2: deep sleep)
- * @retval ESP01_Status_t Statut de la lecture (OK, erreur, etc.)
- */
-ESP01_Status_t esp01_get_sleep_mode(int *mode);
-
-/**
- * @brief Définit le mode sommeil du module ESP01.
- * @param mode Mode sommeil à appliquer (0: aucun, 1: light sleep, 2: deep sleep)
- * @retval ESP01_Status_t Statut de la configuration (OK, erreur, etc.)
- */
-ESP01_Status_t esp01_set_sleep_mode(int mode);
-
-/**
- * @brief Récupère la puissance RF actuelle du module ESP01.
- * @param dbm Pointeur vers la variable de sortie (valeur en dBm)
- * @retval ESP01_Status_t Statut de la lecture (OK, erreur, etc.)
- */
-ESP01_Status_t esp01_get_rf_power(int *dbm);
-
-/**
- * @brief Définit la puissance RF du module ESP01.
- * @param dbm Puissance à appliquer (en dBm)
- * @retval ESP01_Status_t Statut de la configuration (OK, erreur, etc.)
- */
-ESP01_Status_t esp01_set_rf_power(int dbm);
-
-/**
- * @brief Récupère le niveau de log système du module ESP01.
- * @param level Pointeur vers la variable de sortie
- * @retval ESP01_Status_t Statut de la lecture
- */
-ESP01_Status_t esp01_get_syslog(int *level);
-
-/**
- * @brief Définit le niveau de log système du module ESP01.
- * @param level Niveau de log à appliquer
- * @retval ESP01_Status_t Statut de la configuration
- */
-ESP01_Status_t esp01_set_syslog(int level);
-
-/**
- * @brief Récupère la RAM libre et la RAM minimale historique (AT+SYSRAM?).
- */
-ESP01_Status_t esp01_get_sysram(uint32_t *free_ram, uint32_t *min_ram);
-
-/**
- * @brief Récupère la taille de la mémoire système (store).
- * @param sysstore Pointeur vers la variable de sortie
- * @retval ESP01_Status_t Statut de la lecture
- */
-ESP01_Status_t esp01_get_sysstore(uint32_t *sysstore);
-
-ESP01_Status_t esp01_get_sysflash(char *out, size_t out_size);
-
-/**
- * @brief  Affiche la liste détaillée des partitions flash à partir de la réponse AT+SYSFLASH?.
- * @param  sysflash_resp Réponse brute de la commande AT+SYSFLASH?.
- * @retval Nombre de partitions affichées.
- */
-uint8_t esp01_display_sysflash_partitions(const char *sysflash_resp);
-
-/**
- * @brief Récupère la taille de la RAM utilisateur.
- * @param userram Pointeur vers la variable de sortie
- * @retval ESP01_Status_t Statut de la lecture
- */
-ESP01_Status_t esp01_get_userram(uint32_t *userram);
-
-/**
- * @brief Met le module ESP01 en deep sleep pour une durée donnée.
- * @param ms Durée en millisecondes
- * @retval ESP01_Status_t Statut de la commande
- */
-ESP01_Status_t esp01_deep_sleep(uint32_t ms);
-
-/* ========================= HELPERS (CONVERSION, AFFICHAGE, FORMATAGE HUMAIN) ========================= */
-/**
- * @brief Affiche les informations firmware à partir de la réponse AT+GMR.
- * @param gmr_resp Réponse brute AT+GMR
- * @retval uint8_t 1 si affichage réussi, 0 sinon
+ * @brief Affiche les infos firmware à partir de la réponse AT+GMR
  */
 uint8_t esp01_display_firmware_info(const char *gmr_resp);
 
 /**
- * @brief Convertit le mode sommeil en chaîne lisible.
- * @param mode Mode sommeil
- * @param out Buffer de sortie
- * @param out_size Taille du buffer
- * @retval ESP01_Status_t Statut de la conversion
+ * @brief Liste les commandes AT supportées (AT+CMD?)
+ */
+ESP01_Status_t esp01_get_cmd_list(char *out, size_t out_size);
+
+/**
+ * @brief Met le module en deep sleep (AT+GSLP)
+ */
+ESP01_Status_t esp01_deep_sleep(uint32_t ms);
+
+/**
+ * @brief Récupère ou définit le mode sommeil (AT+SLEEP)
+ */
+ESP01_Status_t esp01_get_sleep_mode(int *mode);
+ESP01_Status_t esp01_set_sleep_mode(int mode);
+/**
+ * @brief Convertit le mode sommeil en chaîne lisible
  */
 ESP01_Status_t esp01_sleep_mode_to_string(int mode, char *out, size_t out_size);
 
 /**
- * @brief Convertit le niveau de log système en chaîne lisible.
- * @param syslog Niveau de log
- * @param out Buffer de sortie
- * @param out_size Taille du buffer
- * @retval ESP01_Status_t Statut de la conversion
+ * @brief Récupère l'utilisation RAM (AT+SYSRAM)
  */
-ESP01_Status_t esp01_syslog_to_string(int syslog, char *out, size_t out_size);
-
+ESP01_Status_t esp01_get_sysram(uint32_t *free_ram, uint32_t *min_ram);
 /**
- * @brief Convertit la RAM libre et min en chaîne lisible.
- * @param free_ram RAM libre
- * @param min_ram RAM minimale
- * @param out Buffer de sortie
- * @param out_size Taille du buffer
- * @retval ESP01_Status_t Statut de la conversion
+ * @brief Formate la RAM en chaîne lisible
  */
 ESP01_Status_t esp01_sysram_to_string(uint32_t free_ram, uint32_t min_ram, char *out, size_t out_size);
 
 /**
- * @brief Convertit la taille de la mémoire système (store) en chaîne lisible.
- * @param sysstore Taille mémoire système
- * @param out Buffer de sortie
- * @param out_size Taille du buffer
- * @retval ESP01_Status_t Statut de la conversion
+ * @brief Récupère la partition flash (AT+SYSFLASH)
+ */
+ESP01_Status_t esp01_get_sysflash(char *out, size_t out_size);
+/**
+ * @brief Formate la flash en chaîne lisible
+ */
+ESP01_Status_t esp01_sysflash_to_string(uint32_t sysflash, char *out, size_t out_size);
+/**
+ * @brief Affiche les partitions flash à partir de la réponse AT+SYSFLASH?
+ */
+uint8_t esp01_display_sysflash_partitions(const char *sysflash_resp);
+
+/**
+ * @brief Récupère ou définit la puissance RF (AT+RFPOWER)
+ */
+ESP01_Status_t esp01_get_rf_power(int *dbm);
+ESP01_Status_t esp01_set_rf_power(int dbm);
+
+/**
+ * @brief Récupère ou définit le niveau de log système (AT+SYSLOG)
+ */
+ESP01_Status_t esp01_get_syslog(int *level);
+ESP01_Status_t esp01_set_syslog(int level);
+/**
+ * @brief Convertit le niveau de log en chaîne lisible
+ */
+ESP01_Status_t esp01_syslog_to_string(int syslog, char *out, size_t out_size);
+
+/**
+ * @brief Récupère ou définit le mode de stockage (AT+SYSSTORE)
+ */
+ESP01_Status_t esp01_get_sysstore(uint32_t *sysstore);
+/**
+ * @brief Formate le mode de stockage en chaîne lisible
  */
 ESP01_Status_t esp01_sysstore_to_string(uint32_t sysstore, char *out, size_t out_size);
 
 /**
- * @brief Convertit la taille de la mémoire flash système en chaîne lisible.
- * @param sysflash Taille mémoire flash
- * @param out Buffer de sortie
- * @param out_size Taille du buffer
- * @retval ESP01_Status_t Statut de la conversion
+ * @brief Récupère la RAM utilisateur (AT+USERRAM)
  */
-ESP01_Status_t esp01_sysflash_to_string(uint32_t sysflash, char *out, size_t out_size);
-
+ESP01_Status_t esp01_get_userram(uint32_t *userram);
 /**
- * @brief Convertit la taille de la RAM utilisateur en chaîne lisible.
- * @param userram Taille RAM utilisateur
- * @param out Buffer de sortie
- * @param out_size Taille du buffer
- * @retval ESP01_Status_t Statut de la conversion
+ * @brief Formate la RAM utilisateur en chaîne lisible
  */
 ESP01_Status_t esp01_userram_to_string(uint32_t userram, char *out, size_t out_size);
 
 /**
- * @brief Formate une taille en octets en chaîne lisible (Ko, Mo).
- * @param bytes Taille en octets
- * @param output Buffer de sortie
- * @param size Taille du buffer
- * @retval char* Pointeur vers la chaîne formatée
+ * @brief Récupère ou définit la config UART (AT+UART)
  */
-char *esp01_format_size(size_t bytes, char *output, size_t size);
-
+ESP01_Status_t esp01_get_uart_config(char *out, size_t out_size);
+ESP01_Status_t esp01_set_uart_config(uint32_t baud, uint8_t databits, uint8_t stopbits, uint8_t parity, uint8_t flowctrl);
 /**
- * @brief Convertit la configuration UART brute en chaîne lisible.
- * @param raw_config Chaîne brute
- * @param out Buffer de sortie
- * @param out_size Taille du buffer
- * @retval ESP01_Status_t Statut de la conversion
+ * @brief Convertit la config UART brute en chaîne lisible
  */
 ESP01_Status_t esp01_uart_config_to_string(const char *raw_config, char *out, size_t out_size);
 
 /* ========================= OUTILS DE PARSING ========================= */
+
 /**
  * @brief Parse un entier après un motif dans une chaîne.
  * @param text Chaîne source
@@ -466,10 +389,11 @@ ESP01_Status_t esp01_wait_for_pattern(const char *pattern, uint32_t timeout_ms);
 ESP01_Status_t esp01_send_raw_command_dma(const char *cmd, char *resp, size_t resp_size, const char *wait_pattern, uint32_t timeout_ms);
 
 /**
- * @brief Supprime les espaces en début et fin de chaîne.
+ * @brief Supprime les espaces et les caractères de contrôle d'une chaîne.
  * @param str Chaîne à nettoyer
+ * @note Modifie la chaîne en place
  */
-void _esp_trim_string(char *str);
+void esp01_trim_string(char *str);
 
 /**
  * @brief Copie une chaîne source dans une destination de façon sécurisée.

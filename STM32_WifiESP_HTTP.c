@@ -89,6 +89,7 @@ static http_request_t parse_ipd_header(const char *data)
         req.content_length = content_length;                                // Stocke la longueur du contenu
         req.has_ip = true;                                                  // Indique que l'IP est présente
         esp01_safe_strcpy(req.client_ip, sizeof(req.client_ip), client_ip); // Copie l'adresse IP
+        esp01_trim_string(req.client_ip);                                   // Supprime les espaces superflus
         req.client_port = client_port;                                      // Stocke le port du client
         req.is_valid = true;                                                // Indique que la structure est valide
     }
@@ -291,6 +292,7 @@ ESP01_Status_t esp01_parse_http_request(const char *raw_request, http_parsed_req
         return ESP01_FAIL;                                           // Retourne une erreur si trop long
     memcpy(parsed->method, method_start, method_end - method_start); // Copie la méthode
     parsed->method[method_end - method_start] = '\0';                // Termine la chaîne
+    esp01_trim_string(parsed->method);                               // Supprime les espaces superflus
 
     p++;                                           // Passe l'espace
     path_start = p;                                // Début du chemin
@@ -301,6 +303,7 @@ ESP01_Status_t esp01_parse_http_request(const char *raw_request, http_parsed_req
         return ESP01_FAIL;                                   // Retourne une erreur si trop long
     memcpy(parsed->path, path_start, path_end - path_start); // Copie le chemin
     parsed->path[path_end - path_start] = '\0';              // Termine la chaîne
+    esp01_trim_string(parsed->path);                         // Supprime les espaces superflus
 
     if (*p == '?') // Si une query string est présente
     {
@@ -314,6 +317,7 @@ ESP01_Status_t esp01_parse_http_request(const char *raw_request, http_parsed_req
             qlen = ESP01_MAX_HTTP_QUERY_LEN - 1;         // Tronque si nécessaire
         memcpy(parsed->query_string, query_start, qlen); // Copie la query string
         parsed->query_string[qlen] = '\0';               // Termine la chaîne
+        esp01_trim_string(parsed->query_string);         // Supprime les espaces superflus
     }
     else
     {
@@ -599,6 +603,7 @@ void esp01_process_requests(void)
                 char http_buf[ESP01_MAX_TOTAL_HTTP] = {0};        // Buffer pour la requête HTTP brute
                 memcpy(http_buf, data_start, ipd.content_length); // Copie la requête HTTP
                 http_buf[ipd.content_length] = 0;                 // Termine la chaîne
+                esp01_trim_string(http_buf);                      // Supprime les espaces superflus
 
                 ESP01_LOG_DEBUG("HTTP", "IPD reçu (brut) :\n%s", http_buf); // Log la requête brute
 

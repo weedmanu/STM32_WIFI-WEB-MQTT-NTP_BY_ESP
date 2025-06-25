@@ -607,6 +607,7 @@ void esp01_mqtt_poll(void)
                 char topic_buf[ESP01_MQTT_MAX_TOPIC_LEN + 1] = {0};
                 memcpy(topic_buf, &payload[4], topic_len); // Copie le topic
                 topic_buf[topic_len] = '\0';
+                esp01_trim_string(topic_buf);
 
                 int msg_len = payload_len - 4 - topic_len;
                 if (msg_len > (ESP01_MQTT_MAX_PAYLOAD_LEN - 1))
@@ -615,6 +616,7 @@ void esp01_mqtt_poll(void)
                 char msg_buf[ESP01_MQTT_MAX_PAYLOAD_LEN] = {0};
                 memcpy(msg_buf, &payload[4 + topic_len], msg_len); // Copie le message
                 msg_buf[msg_len] = '\0';
+                esp01_trim_string(msg_buf);
 
                 g_mqtt_cb(topic_buf, msg_buf);                                                                   // Appelle le callback utilisateur
                 ESP01_LOG_DEBUG("MQTT", "Paquet PUBLISH reçu sur topic '%s', message='%s'", topic_buf, msg_buf); // Log réception

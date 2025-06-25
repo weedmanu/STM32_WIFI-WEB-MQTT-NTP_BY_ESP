@@ -63,8 +63,21 @@ typedef struct
     bool dst_enable;                       // Activation du changement d'heure automatique
 } esp01_ntp_config_t;
 
-/* =========================== FONCTIONS PRINCIPALES (API NTP) ============================ */
+/**
+ * @defgroup ESP01_NTP_AT_WRAPPERS Wrappers AT et helpers associés (par commande AT)
+ * @brief  Fonctions exposant chaque commande AT NTP à l'utilisateur, avec leurs helpers de parsing/affichage.
+ *
+ * | Commande AT         | Wrapper principal(s)                | Helpers associés                | Description courte                  |
+ * |---------------------|-------------------------------------|---------------------------------|-------------------------------------|
+ * | AT+CNTP             | esp01_apply_ntp_config              | INUTILE                         | Configure le NTP sur l'ESP01        |
+ * | AT+CNTP?            | esp01_get_ntp_time                  | esp01_parse_ntp_esp01           | Récupère la dernière date/heure NTP |
+ * |                     |                                     | esp01_parse_ntp_datetime        |                                     |
+ * |                     |                                     | esp01_format_datetime_fr        |                                     |
+ * |                     |                                     | esp01_format_datetime_en        |                                     |
+ * |                     |                                     | esp01_ntp_format_last_datetime  |                                     |
+ */
 
+/* ========================= FONCTIONS PRINCIPALES (API NTP) ========================= */
 /**
  * @brief Configure la structure NTP locale (ne modifie pas le module ESP01).
  */
@@ -86,16 +99,16 @@ ESP01_Status_t esp01_ntp_start_sync(bool periodic);
 ESP01_Status_t esp01_ntp_handle(void);
 
 /**
- * @brief Applique la configuration NTP au module ESP01 (enable, timezone, serveur, intervalle).
+ * @brief Applique la configuration NTP au module ESP01 (enable, timezone, serveur, intervalle) (AT+CNTP)
  */
 ESP01_Status_t esp01_apply_ntp_config(uint8_t enable, int timezone, const char *server, int interval_s);
 
 /**
- * @brief Récupère la dernière date/heure NTP reçue sous forme brute (chaîne).
+ * @brief Récupère la dernière date/heure NTP reçue sous forme brute (chaîne) (AT+CNTP?)
  */
 ESP01_Status_t esp01_get_ntp_time(char *datetime_buf, size_t bufsize);
 
-/* =========================== FONCTIONS ONE-SHOT & AFFICHAGE ============================ */
+/* ========================= FONCTIONS ONE-SHOT & AFFICHAGE ========================= */
 /**
  * @brief Affiche la configuration NTP courante.
  */
@@ -128,7 +141,7 @@ void esp01_ntp_clear_updated_flag(void);
  */
 const esp01_ntp_config_t *esp01_get_ntp_config(void);
 
-/* =========================== PARSING, FORMATAGE & UTILITAIRES ============================ */
+/* ========================= OUTILS DE PARSING, FORMATAGE & UTILITAIRES ========================= */
 /**
  * @brief Parse une chaîne NTP ESP01 et remplit une structure date/heure.
  */
