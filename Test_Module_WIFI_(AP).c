@@ -62,8 +62,8 @@
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
-#define SSID "freeman"				  // Nom du réseau WiFi
-#define PASSWORD "manu2612@SOSSO1008" // Mot de passe du réseau WiFi
+#define SSID "XXXXXXXX"               // Nom du réseau WiFi
+#define PASSWORD "XXXXXXXXXXXXXXXXXX" // Mot de passe du réseau WiFi
 #define SSID_AP "STM32"				  // Nom du réseau WiFi
 #define PASSWORD_AP "12345678"		  // Mot de passe du réseau WiFi
 /* USER CODE END PD */
