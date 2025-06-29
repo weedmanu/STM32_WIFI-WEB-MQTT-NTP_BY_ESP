@@ -1,4 +1,4 @@
-# Documentation des commandes AT – Firmware Cyprus (ESP|| ATE1             |   0    |  0  |  0  |  1  | Active l'écho des commandes AT    |ATE0             |   0    |  0  |  0  |  1  | Désactive l'écho des commandes AT |1/ESP8266)
+# Documentation des commandes AT – Firmware Cyprus (ESP|ESP8266)
 
 ## À propos
 
