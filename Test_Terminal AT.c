@@ -88,21 +88,22 @@ static void MX_USART1_UART_Init(void);
 // Redirige printf vers l'UART2 (console série)
 int __io_putchar(int ch)
 {
-	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
-	return ch;
+	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF); // Envoie le caractère sur UART2
+	return ch;											   // Retourne le caractère envoyé
 }
 
 // Redirige getchar/fgets sur UART2 (pour la saisie utilisateur)
 int __io_getchar(void)
 {
-	uint8_t ch = 0;
-	HAL_UART_Receive(&huart2, &ch, 1, 0xFFFF);
-	return ch;
+	uint8_t ch = 0;							   // Variable pour stocker le caractère reçu
+	HAL_UART_Receive(&huart2, &ch, 1, 0xFFFF); // Attente de réception d'un caractère sur UART2
+	return ch;								   // Retourne le caractère reçu
 }
 
+// Fonction pour lire un caractère depuis le terminal (simule fgetc)
 int fgetc(FILE *f)
 {
-	return __io_getchar();
+	return __io_getchar(); // Appel de la fonction de lecture de caractère
 }
 /* USER CODE END 0 */
 
@@ -139,28 +140,28 @@ int main(void)
 	MX_USART2_UART_Init();
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
-	HAL_Delay(1000); // Délai initial pour stabilisation des périphériques
-	printf("\n[TEST][INFO] === Démarrage du terminal AT pour ESP01 ===\r\n");
-	HAL_Delay(500);
-	ESP01_Status_t status;
+	HAL_Delay(1000);														  // Délai initial pour stabilisation des périphériques
+	printf("\n[TEST][INFO] === Démarrage du terminal AT pour ESP01 ===\r\n"); // Message d'introduction
+	HAL_Delay(500);															  // Pause pour laisser le temps de lire le message
+	ESP01_Status_t status;													  // Variable pour stocker le statut des opérations
 
 	// Initialisation du driver ESP01
-	printf("\n[TEST][INFO] === Initialisation du driver ESP01 ===\r\n");
-	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-	printf("[TEST][INFO] Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
-	if (status != ESP01_OK)
+	printf("\n[TEST][INFO] === Initialisation du driver ESP01 ===\r\n");							// Message d'initialisation
+	status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);					// Initialisation du driver avec UART1 et UART2
+	printf("[TEST][INFO] Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status)); // Affichage du statut de l'initialisation
+	if (status != ESP01_OK)																			// Vérification de l'état d'initialisation
 	{
-		printf("[TEST][ERROR] L'initialisation du driver a échoué\r\n");
-		Error_Handler();
+		printf("[TEST][ERROR] L'initialisation du driver a échoué\r\n"); // Message d'erreur si l'initialisation échoue
+		Error_Handler();												 // Appel de la fonction d'erreur
 	}
-	HAL_Delay(500);
+	HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
 	// Démarrage du terminal AT
-	printf("\n[TEST][INFO] === Démarrage du terminal interactif ===\r\n");
-	esp01_terminal_begin(&huart2);
-	printf("[TEST][INFO] Terminal démarré, prêt à recevoir vos commandes AT\r\n");
-	printf("[TEST][INFO] Tapez vos commandes AT et appuyez sur Entrée\r\n");
-	printf("[TEST][INFO] Exemple: AT+GMR pour afficher la version du firmware\r\n");
+	printf("\n[TEST][INFO] === Démarrage du terminal AT ===\r\n");					 // Message de démarrage du terminal AT
+	esp01_terminal_begin(&huart2);													 // Initialisation de la console série sur UART2 en interruption pour les commandes AT
+	printf("[TEST][INFO] Terminal démarré, prêt à recevoir vos commandes AT\r\n");	 // Message de confirmation du démarrage du terminal
+	printf("[TEST][INFO] Tapez vos commandes AT et appuyez sur Entrée\r\n");		 // Instructions pour l'utilisateur
+	printf("[TEST][INFO] Exemple: AT+GMR pour afficher la version du firmware\r\n"); // Exemple de commande AT à tester
 	HAL_Delay(500);
 	/* USER CODE END 2 */
 

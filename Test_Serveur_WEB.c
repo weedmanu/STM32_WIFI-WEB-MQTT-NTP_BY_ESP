@@ -47,10 +47,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>		   // Pour printf, snprintf, etc.
-#include "STM32_WifiESP.h" // Fonctions du driver ESP01
-#include "STM32_WifiESP_WIFI.h"
-#include "STM32_WifiESP_HTTP.h"
+#include <stdio.h>				// Pour printf, snprintf, etc.
+#include "STM32_WifiESP.h"		// Fonctions du driver ESP01
+#include "STM32_WifiESP_WIFI.h" // Fonctions WiFi haut niveau
+#include "STM32_WifiESP_HTTP.h" // Fonctions HTTP haut niveau
 
 /* USER CODE END Includes */
 
@@ -93,69 +93,91 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-// Redirige printf vers l'UART2 (console série)
+
+// ==================== Redirection printf UART2 ====================
+// Cette fonction permet de rediriger la sortie standard (printf)
+// vers l'UART2, afin d'afficher les messages sur la console série du PC.
+// Elle est appelée automatiquement par printf pour chaque caractère à envoyer.
+//
+// Paramètre :
+//   ch : caractère à transmettre
+// Retour :
+//   Le caractère transmis (pour compatibilité avec printf)
 int __io_putchar(int ch)
 {
-	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
-	return ch;
+	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF); // Envoie le caractère sur UART2 (console PC)
+	return ch;											   // Retourne le caractère envoyé
 }
 
 // ==================== Constantes HTML et CSS ====================
-
+// Ces constantes facilitent la génération dynamique de pages web embarquées.
+// Elles permettent de construire des pages HTML complètes avec un style cohérent et responsive.
+//
 // --- Parties communes HTML ---
-static const char HTML_DOC_START[] = "<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'>";
-static const char HTML_TITLE_START[] = "<title>";
-static const char HTML_TITLE_END_STYLE_START[] = "</title><style>";
-static const char HTML_STYLE_END_HEAD_BODY_CARD_START[] = "</style></head><body><div class='card'>";
-static const char HTML_CARD_END_BODY_END[] = "</div></body></html>";
+// Début du document HTML, balises d'ouverture et en-tête
+static const char HTML_DOC_START[] = "<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'>";	 // Début du document HTML
+static const char HTML_TITLE_START[] = "<title>";													 // Début de la balise title
+static const char HTML_TITLE_END_STYLE_START[] = "</title><style>";									 // Fin de la balise title et début du style
+static const char HTML_STYLE_END_HEAD_BODY_CARD_START[] = "</style></head><body><div class='card'>"; // Fin du style, début du body et de la card
+static const char HTML_CARD_END_BODY_END[] = "</div></body></html>";								 // Fin de la card, du body et du document HTML
 
 // --- CSS Commun ---
+// Feuille de style commune à toutes les pages générées
 static const char PAGE_CSS[] =
 	"body{font-family:sans-serif;background:#222;text-align:center;margin:0;padding:0;}"
 	".card{background:linear-gradient(135deg,#c8f7c5 0%,#fff9c4 50%,#ffd6d6 100%);margin:3em auto 0 auto;padding:2.5em 2em 2em 2em;border-radius:18px;box-shadow:0 4px 24px #0004;max-width:420px;display:flex;flex-direction:column;align-items:center;}"
 	"h1{color:#2d3a1a;margin-top:0;margin-bottom:1.5em;}";
 
 // --- Page Accueil ("/") ---
+// Cette fonction gère la page d'accueil du serveur web embarqué.
+// Elle affiche un menu principal avec des liens vers les différentes fonctionnalités (LED, test GET, statut, device).
+// Le HTML est généré dynamiquement avec un style responsive et des boutons colorés.
 static void page_root(int conn_id, const http_parsed_request_t *req)
 {
-	if (!req)
-		return;
-	printf("[TEST][INFO] Entrée dans page_root (conn_id=%d)\r\n", conn_id);
+	if (!req)																// Vérifie si la requête est valide
+		return;																// Si non, on sort de la fonction
+	printf("[TEST][INFO] Entrée dans page_root (conn_id=%d)\r\n", conn_id); // Affiche l'entrée dans la page d'accueil
 
-	static const char PAGE_ROOT_TITLE[] = "Accueil STM32 Webserver";
-	static const char CSS_PAGE_ROOT_SPECIFIC[] =
+	static const char PAGE_ROOT_TITLE[] = "Accueil STM32 Webserver"; // Titre de la page d'accueil
+	static const char CSS_PAGE_ROOT_SPECIFIC[] =					 // CSS spécifique à la page d'accueil
 		"a.button{display:inline-block;padding:1em 2em;margin:1em 0.5em;background:#388e3c;color:#fff;text-decoration:none;border-radius:8px;font-size:1.1em;transition:background 0.2s,border 0.2s;box-shadow:0 2px 8px #e0f5d8;border:2px solid #388e3c;}"
 		"a.button.green{background:#28a745;border-color:#28a745;color:#fff;}"
 		"a.button.yellow{background:#fbc02d;border-color:#fbc02d;color:#fff;}"
 		"a.button.red{background:#d32f2f;border-color:#d32f2f;color:#fff;}"
 		"a.button:hover{filter:brightness(1.15);}";
-	static const char BODY_PAGE_ROOT[] =
+	static const char BODY_PAGE_ROOT[] = // Corps de la page d'accueil
 		"<h1>Bienvenue sur le serveur web STM32 !</h1>"
 		"<a class='button green' href='/led'>Contrôler la LED</a>"
 		"<a class='button yellow' href='/testget'>Tester GET</a>"
 		"<a class='button red' href='/status'>Statut</a>"
 		"<a class='button red' href='/device'>Device</a>";
 
-	char html[2048];
-	html[0] = '\0';
-	char *ptr = html;
-	char *end_ptr = html + sizeof(html);
+	char html[2048];					 // Tampon pour générer la page HTML
+	html[0] = '\0';						 // Initialise le tampon à vide
+	char *ptr = html;					 // Pointeur pour écrire dans le tampon HTML
+	char *end_ptr = html + sizeof(html); // Pointeur de fin pour éviter les débordements
 
-	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK) // Vérifie si le tampon est assez grand
 		return;
 
-	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_ROOT_TITLE, HTML_TITLE_END_STYLE_START);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_ROOT_SPECIFIC);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_STYLE_END_HEAD_BODY_CARD_START);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", BODY_PAGE_ROOT);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
+	// Génération du contenu HTML
+	// Utilise snprintf pour écrire dans le tampon HTML de manière sécurisée
+	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_ROOT_TITLE, HTML_TITLE_END_STYLE_START); // Début du document HTML, titre et début du style
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);																			// Ajoute le CSS commun
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_ROOT_SPECIFIC);																// Ajoute le CSS spécifique à la page d'accueil
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_STYLE_END_HEAD_BODY_CARD_START);													// Fin du style, début du body et de la card
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", BODY_PAGE_ROOT);																		// Ajoute le corps de la page d'accueil
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);																// Fin de la card, du body et du document HTML
 
-	printf("[TEST][INFO] Sortie de page_root, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
-	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html)); // Envoie la page
+	printf("[TEST][INFO] Sortie de page_root, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html)); // Affiche la taille de la réponse
+	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));								   // Envoie la page
 }
 
 // --- Page LED ("/led") ---
+// Cette fonction gère la page de contrôle de la LED embarquée.
+// Elle affiche dynamiquement l'état actuel de la LED (allumée/éteinte) et propose un formulaire web pour changer son état.
+// Les paramètres GET reçus dans l'URL permettent d'allumer ou d'éteindre la LED à distance via l'interface web.
+// Un bouton permet de revenir à la page d'accueil.
 static void page_led(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
@@ -180,21 +202,22 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 		"</form>"
 		"<p><a class='button yellow' href='/'>Retour accueil</a></p>";
 
-	if (req && req->query_string[0])
+	// Traitement des paramètres GET pour contrôler la LED
+	if (req && req->query_string[0]) // Vérifie si des paramètres GET sont présents dans la requête
 	{
-		if (strstr(req->query_string, "state=on"))
-			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_SET);
-		else if (strstr(req->query_string, "state=off"))
-			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_RESET);
+		if (strstr(req->query_string, "state=on"))							// Si le paramètre "state=on" est trouvé dans la requête
+			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_SET);	// Allume la LED
+		else if (strstr(req->query_string, "state=off"))					// Si le paramètre "state=off" est trouvé dans la requête
+			HAL_GPIO_WritePin(LED_GPIO_PORT, LED_GPIO_PIN, GPIO_PIN_RESET); // Éteint la LED
 	}
-	GPIO_PinState led = HAL_GPIO_ReadPin(LED_GPIO_PORT, LED_GPIO_PIN);
+	GPIO_PinState led = HAL_GPIO_ReadPin(LED_GPIO_PORT, LED_GPIO_PIN); // Lit l'état actuel de la LED
 
-	char html[2048];
-	char *ptr = html;
-	char *end_ptr = html + sizeof(html);
+	char html[2048];					 // Tampon pour générer la page HTML
+	char *ptr = html;					 // Pointeur pour écrire dans le tampon HTML
+	char *end_ptr = html + sizeof(html); // Pointeur de fin pour éviter les débordements
 
-	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
-		return;
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK) // Vérifie si le tampon est assez grand
+		return;																   // Si non, on sort de la fonction
 
 	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_LED_TITLE, HTML_TITLE_END_STYLE_START);
 	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
@@ -213,6 +236,9 @@ static void page_led(int conn_id, const http_parsed_request_t *req)
 }
 
 // --- Page Test GET ("/testget") ---
+// Cette fonction permet de tester la récupération et l'affichage des paramètres GET passés dans l'URL.
+// Elle affiche un exemple de lien à tester dans le navigateur et liste dynamiquement les paramètres reçus dans la requête.
+// Utile pour comprendre le fonctionnement des requêtes GET sur le serveur embarqué et pour le debug.
 static void page_testget(int conn_id, const http_parsed_request_t *req)
 {
 	if (!req)
@@ -253,6 +279,7 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 	char params_html[512] = "";
 	int nb_lignes = 0, max_lignes = 8;
 
+	// Affiche les paramètres GET reçus dans la requête
 	if (req && req->query_string[0])
 	{
 		char query_copy[256];
@@ -276,88 +303,90 @@ static void page_testget(int conn_id, const http_parsed_request_t *req)
 				snprintf(row, sizeof(row), "<div class='param'><span class='paramname'>%s :</span> <span class='paramval'></span></div>", token);
 			}
 			// Concaténation sécurisée avec vérification d'espace restant
-			size_t current_len = strlen(params_html);
+			size_t current_len = strlen(params_html);				   // Longueur actuelle du HTML des paramètres
 			size_t space_left = sizeof(params_html) - current_len - 1; // -1 pour \0
-			if (strlen(row) < space_left)
+			if (strlen(row) < space_left)							   // Vérifie s'il reste de l'espace pour ajouter la ligne
 			{
-				strncat(params_html, row, space_left);
+				strncat(params_html, row, space_left); // Ajoute la ligne au HTML des paramètres
 			}
-			else
+			else // sinon
 			{
 				break; // Arrêter si plus d'espace
 			}
-			nb_lignes++;
-			token = strtok(NULL, "&");
+			nb_lignes++;			   // Incrémente le compteur de lignes
+			token = strtok(NULL, "&"); // Passe au paramètre suivant
 		}
 	}
-	else
+	else // Si aucun paramètre GET n'est reçu
 	{
-		strncpy(params_html, "<div style='margin:1em 0'><i>Aucun paramètre GET reçu</i></div>", sizeof(params_html) - 1);
-		params_html[sizeof(params_html) - 1] = '\0';
+		strncpy(params_html, "<div style='margin:1em 0'><i>Aucun paramètre GET reçu</i></div>", sizeof(params_html) - 1); // Si aucun paramètre, afficher un message
+		params_html[sizeof(params_html) - 1] = '\0';																	  // Assurer la terminaison de la chaîne
 	}
 
 	// Concaténation sécurisée du contenu final
-	size_t html_current_len = strlen(html);
+	size_t html_current_len = strlen(html);						  // Longueur actuelle du HTML
 	size_t html_space_left = sizeof(html) - html_current_len - 1; // -1 pour \0
 
-	char *final_content = "<br><a class='button green' href='/'>Retour accueil</a>";
-	if (strlen(params_html) + strlen(final_content) + strlen(HTML_CARD_END_BODY_END) < html_space_left)
+	char *final_content = "<br><a class='button green' href='/'>Retour accueil</a>";					// Bouton de retour à la page d'accueil
+	if (strlen(params_html) + strlen(final_content) + strlen(HTML_CARD_END_BODY_END) < html_space_left) // Vérifie s'il y a assez d'espace pour ajouter le contenu final
 	{
-		strncat(html, params_html, html_space_left);
-		html_current_len = strlen(html);
-		html_space_left = sizeof(html) - html_current_len - 1;
+		strncat(html, params_html, html_space_left);		   // Ajoute les paramètres HTML au tampon
+		html_current_len = strlen(html);					   // Met à jour la longueur actuelle du HTML
+		html_space_left = sizeof(html) - html_current_len - 1; // Met à jour l'espace restant
 
-		strncat(html, final_content, html_space_left);
-		html_current_len = strlen(html);
-		html_space_left = sizeof(html) - html_current_len - 1;
+		strncat(html, final_content, html_space_left);		   // Ajoute le contenu final (bouton de retour)
+		html_current_len = strlen(html);					   // Met à jour la longueur actuelle du HTML
+		html_space_left = sizeof(html) - html_current_len - 1; // Met à jour l'espace restant
 
-		strncat(html, HTML_CARD_END_BODY_END, html_space_left);
+		strncat(html, HTML_CARD_END_BODY_END, html_space_left); // Ajoute la fin de la card et du body
 	}
-	else
+	else // Si pas assez d'espace pour ajouter le contenu final
 	{
 		// Fallback si pas assez d'espace - utiliser snprintf pour tronquer proprement
-		snprintf(html + html_current_len, html_space_left, "%s%s%s", params_html, final_content, HTML_CARD_END_BODY_END);
+		snprintf(html + html_current_len, html_space_left, "%s%s%s", params_html, final_content, HTML_CARD_END_BODY_END); // Concatène les paramètres, le bouton de retour et la fin de la card
 	}
 
-	printf("[TEST][INFO] Sortie de page_testget, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
-	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
+	printf("[TEST][INFO] Sortie de page_testget, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html)); // Affiche la taille de la réponse
+	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));									  // Envoie la page générée au client
 }
 
 // --- Page Status ("/status") ---
+// Cette fonction affiche l'état du serveur web embarqué : IP, port, état de la LED, connexions actives, statistiques HTTP.
+// Elle génère dynamiquement des tableaux HTML pour présenter les informations de diagnostic et de monitoring du serveur.
+// Permet de surveiller l'activité réseau et le bon fonctionnement du serveur embarqué.
 static void page_status(int conn_id, const http_parsed_request_t *req)
 {
-	if (!req)
-		return;
-	printf("[TEST][INFO] Entrée dans page_status (conn_id=%d)\r\n", conn_id);
+	if (!req)																  // Vérifie si la requête est valide
+		return;																  // Si non, on sort de la fonction
+	printf("[TEST][INFO] Entrée dans page_status (conn_id=%d)\r\n", conn_id); // Affiche l'entrée dans la page de statut
 
-	const char PAGE_STATUS_TITLE[] = "Statut Serveur STM32";
-	const char CSS_PAGE_STATUS_SPECIFIC[] =
+	const char PAGE_STATUS_TITLE[] = "Statut Serveur STM32"; // Titre de la page de statut
+	const char CSS_PAGE_STATUS_SPECIFIC[] =					 // CSS spécifique à la page de statut
 		"table{margin:2em auto 1em auto;border-collapse:collapse;box-shadow:0 2px 8px #e0f5d8;background:#fff;}"
 		"th,td{padding:0.4em 1em;border:1px solid #e0f5d8;font-size:1em;}"
 		"th{background:#ffe066;color:#3a5d23;}"
 		"a.button{display:inline-block;padding:1em 2em;margin:1em 0.5em;background:#388e3c;color:#fff;text-decoration:none;border-radius:8px;font-size:1.1em;transition:background 0.2s,border 0.2s;box-shadow:0 2px 8px #e0f5d8;border:2px solid #388e3c;}"
 		"a.button.green{background:#28a745;border-color:#28a745;color:#fff;";
 
-	char html[2048];
-	char *ptr = html;
-	char *end_ptr = html + sizeof(html);
+	char html[2048];					 // Tampon pour générer la page HTML
+	char *ptr = html;					 // Pointeur pour écrire dans le tampon HTML
+	char *end_ptr = html + sizeof(html); // Pointeur de fin pour éviter les débordements
 
-	char ip[32] = "N/A";
-	if (esp01_get_current_ip(ip, sizeof(ip)) != ESP01_OK)
-		strncpy(ip, "Erreur", sizeof(ip) - 1);
+	char ip[32] = "N/A";								  // Tampon pour l'adresse IP du serveur
+	if (esp01_get_current_ip(ip, sizeof(ip)) != ESP01_OK) // Récupère l'adresse IP actuelle du module ESP01
+		strncpy(ip, "Erreur", sizeof(ip) - 1);			  // Si échec, met "Erreur" dans le tampon
 
-	GPIO_PinState led = HAL_GPIO_ReadPin(LED_GPIO_PORT, LED_GPIO_PIN);
+	GPIO_PinState led = HAL_GPIO_ReadPin(LED_GPIO_PORT, LED_GPIO_PIN); // Lit l'état de la LED embarquée
 
-	const esp01_stats_t *stats = &g_stats;
+	const esp01_stats_t *stats = &g_stats;									   // Récupère les statistiques du serveur
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK) // Vérifie si le tampon est assez grand
+		return;																   // Si non, on sort de la fonction
 
-	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
-		return;
-
-	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_STATUS_TITLE, HTML_TITLE_END_STYLE_START);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_STATUS_SPECIFIC);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_STYLE_END_HEAD_BODY_CARD_START);
-
+	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s", HTML_DOC_START, HTML_TITLE_START, PAGE_STATUS_TITLE, HTML_TITLE_END_STYLE_START); // Début du document HTML, titre et début du style
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);																			  // Ajoute le CSS commun
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_STATUS_SPECIFIC);															  // Ajoute le CSS spécifique à la page de statut
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_STYLE_END_HEAD_BODY_CARD_START);													  // Fin du style, début du body et de la card
+	// Génération du contenu de la page de statut
 	ptr += snprintf(ptr, end_ptr - ptr,
 					"<h1>Serveur STM32</h1>"
 					"<table>"
@@ -371,30 +400,30 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 					(led == GPIO_PIN_SET) ? "#28a745" : "#dc3545",
 					(led == GPIO_PIN_SET) ? "allumée" : "éteinte",
 					esp01_get_active_connection_count());
-
+	// Affiche les informations de connexion TCP
 	ptr += snprintf(ptr, end_ptr - ptr,
 					"<h2>Connexions TCP</h2>"
 					"<table><tr><th>ID</th><th>Dernière activité (ms)</th><th>IP client</th><th>Port client</th></tr>");
-	int nb_affichees = 0;
-	for (int i = 0; i < g_connection_count; ++i)
+	int nb_affichees = 0;						 // Compteur de connexions affichées
+	for (int i = 0; i < g_connection_count; ++i) // Parcourt toutes les connexions actives
 	{
-		if (esp01_is_connection_active(i))
+		if (esp01_is_connection_active(i)) // Vérifie si la connexion est active
 		{
-			const connection_info_t *c = &g_connections[i];
+			const connection_info_t *c = &g_connections[i]; // Récupère les informations de la connexion
 			ptr += snprintf(ptr, end_ptr - ptr,
 							"<tr><td>%d</td><td>%lu</td><td>%s</td><td>%u</td></tr>",
 							c->conn_id,
 							(unsigned long)(HAL_GetTick() - c->last_activity),
 							c->client_ip[0] ? c->client_ip : "N/A",
-							c->client_port);
-			nb_affichees++;
+							c->client_port); // Affiche les informations de la connexion
+			nb_affichees++;					 // Incrémente le compteur de connexions affichées
 		}
 	}
-	if (nb_affichees == 0)
+	if (nb_affichees == 0) // Si aucune connexion active n'a été trouvée
 	{
-		ptr += snprintf(ptr, end_ptr - ptr, "<tr><td colspan='4'><i>Aucune connexion active</i></td></tr>");
+		ptr += snprintf(ptr, end_ptr - ptr, "<tr><td colspan='4'><i>Aucune connexion active</i></td></tr>"); // Affiche un message indiquant qu'il n'y a pas de connexions actives
 	}
-	ptr += snprintf(ptr, end_ptr - ptr, "</table>");
+	ptr += snprintf(ptr, end_ptr - ptr, "</table>"); // Termine la table des connexions TCP
 
 	ptr += snprintf(ptr, end_ptr - ptr,
 					"<h2>Statistiques HTTP</h2>"
@@ -409,172 +438,174 @@ static void page_status(int conn_id, const http_parsed_request_t *req)
 					(unsigned long)stats->response_count,
 					(unsigned long)stats->successful_responses,
 					(unsigned long)stats->failed_responses,
-					(unsigned long)stats->avg_response_time_ms);
+					(unsigned long)stats->avg_response_time_ms); // Affiche les statistiques HTTP
 
-	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>");
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
+	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>"); // Bouton pour revenir à la page d'accueil
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);					 // Termine la card et le body du document HTML
 
-	printf("[TEST][INFO] Sortie de page_status, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
-	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
+	printf("[TEST][INFO] Sortie de page_status, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html)); // Affiche la taille de la réponse
+	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));									 // Envoie la page générée au client
 }
 
 // Structure pour les informations système
 typedef struct
 {
-	char at_version[64];
-	char stm32_type[32];
-	char wifi_mode[8];
-	const char *wifi_ssid;
-	uint16_t server_port;
-	const char *multi_conn;
-} system_info_t;
+	char at_version[64];	// Version du firmware AT du module ESP01
+	char stm32_type[32];	// Type de carte STM32 (L1, L4, F1, F4, F7, H7)
+	char wifi_mode[8];		// Mode WiFi (STA ou AP)
+	const char *wifi_ssid;	// SSID du réseau WiFi configuré
+	uint16_t server_port;	// Port du serveur web embarqué
+	const char *multi_conn; // Indique si les connexions multiples sont activées (Oui/Non)
+} system_info_t;			// Structure pour stocker les informations système
 
 // Fonction pour collecter les informations système
 static void collect_system_info(system_info_t *info)
 {
-	if (!info)
-		return;
+	if (!info)	// Vérifie si le pointeur d'information est valide
+		return; // Si non, on sort de la fonction
 
 	// Firmware ESP01
-	esp01_safe_strcpy(info->at_version, sizeof(info->at_version), "N/A");
-	char resp[256] = {0};
-	if (esp01_get_at_version(resp, sizeof(resp)) == ESP01_OK)
+	esp01_safe_strcpy(info->at_version, sizeof(info->at_version), "N/A"); // Initialise la version AT à "N/A"
+	char resp[256] = {0};												  // Tampon pour la réponse du module ESP01
+	if (esp01_get_at_version(resp, sizeof(resp)) == ESP01_OK)			  // Récupère la version AT du module ESP01
 	{
 		// Utilise la fonction de parsing pour extraire la ligne "AT version:"
-		char *line = strstr(resp, "AT version:");
-		if (line)
+		char *line = strstr(resp, "AT version:"); // Cherche la ligne contenant "AT version:"
+		if (line)								  // Si la ligne est trouvée
 		{
-			char *end = strchr(line, '\n');
-			size_t len = end ? (size_t)(end - line) : strlen(line);
-			if (len > 0 && len < sizeof(info->at_version))
+			char *end = strchr(line, '\n');							// Cherche la fin de la ligne
+			size_t len = end ? (size_t)(end - line) : strlen(line); // Calcule la longueur de la ligne
+			if (len > 0 && len < sizeof(info->at_version))			// Vérifie que la longueur est valide
 			{
-				strncpy(info->at_version, line, len);
-				info->at_version[len] = '\0';
+				strncpy(info->at_version, line, len); // Copie la ligne dans le tampon at_version
+				info->at_version[len] = '\0';		  // Assure la terminaison de la chaîne
 			}
 		}
 	}
 
 	// Type de carte STM32
-	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32 inconnue");
-#if defined(STM32L4)
-	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32L4");
-#elif defined(STM32F4)
-	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F4");
-#elif defined(STM32L1)
-	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32L1");
-#elif defined(STM32F1)
-	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F1");
-#elif defined(STM32F7)
-	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F7");
-#elif defined(STM32H7)
-	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32H7");
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32 inconnue"); // Initialise le type de carte STM32 à "inconnue"
+#if defined(STM32L4)																 // Vérifie si la carte est une STM32L4
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32L4");		 // Initialise le type de carte STM32 à "STM32L4"
+#elif defined(STM32F4)																 // Vérifie si la carte est une STM32F4
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F4"); // Initialise le type de carte STM32 à "STM32F4"
+#elif defined(STM32L1)																 // Vérifie si la carte est une STM32L1
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32L1"); // Initialise le type de carte STM32 à "STM32L1"
+#elif defined(STM32F1)																 // Vérifie si la carte est une STM32F1
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F1"); // Initialise le type de carte STM32 à "STM32F1"
+#elif defined(STM32F7)																 // Vérifie si la carte est une STM32F7
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32F7"); // Initialise le type de carte STM32 à "STM32F7"
+#elif defined(STM32H7)																 // Vérifie si la carte est une STM32H7
+	esp01_safe_strcpy(info->stm32_type, sizeof(info->stm32_type), "STM32H7"); // Initialise le type de carte STM32 à "STM32H7"
 #endif
 
 	// Config WiFi - Utiliser directement la valeur de ESP01_WIFI_MODE_STA
-	if (ESP01_WIFI_MODE_STA == 1)
+	if (ESP01_WIFI_MODE_STA == 1) // Vérifie si le mode WiFi est configuré en station (STA)
 	{
-		esp01_safe_strcpy(info->wifi_mode, sizeof(info->wifi_mode), "STA");
+		esp01_safe_strcpy(info->wifi_mode, sizeof(info->wifi_mode), "STA"); // Initialise le mode WiFi à "STA"
 	}
-	else
+	else // Sinon, on suppose que le mode est AP (Access Point)
 	{
-		esp01_safe_strcpy(info->wifi_mode, sizeof(info->wifi_mode), "AP");
+		esp01_safe_strcpy(info->wifi_mode, sizeof(info->wifi_mode), "AP"); // Initialise le mode WiFi à "AP"
 	}
 
-	info->wifi_ssid = SSID;
+	info->wifi_ssid = SSID; // Utilise la constante SSID définie dans le code pour le SSID du réseau WiFi
 
 	// Config serveur
-	info->server_port = g_server_port;
-	info->multi_conn = (ESP01_MULTI_CONNECTION) ? "Oui" : "Non";
+	info->server_port = g_server_port;							 // Récupère le port du serveur web embarqué
+	info->multi_conn = (ESP01_MULTI_CONNECTION) ? "Oui" : "Non"; // Indique si les connexions multiples sont activées (Oui/Non)
 }
 
 // Fonction pour rendre une section HTML avec table
 static int render_html_section(char *buffer, size_t buffer_size, const char *title,
 							   const char **labels, const char **values, int row_count)
 {
-	char *ptr = buffer;
-	char *end_ptr = buffer + buffer_size;
-	int written = 0;
+	char *ptr = buffer;					  // Pointeur pour écrire dans le tampon
+	char *end_ptr = buffer + buffer_size; // Pointeur de fin pour éviter les débordements
+	int written = 0;					  // Compteur de caractères écrits
 
 	// Titre de la section
 	written = snprintf(ptr, end_ptr - ptr, "<h%d>%s</h%d><table>",
-					   (title[0] == 'I') ? 1 : 2, title, (title[0] == 'I') ? 1 : 2);
-	ptr += written;
+					   (title[0] == 'I') ? 1 : 2, title, (title[0] == 'I') ? 1 : 2); // Écrit le titre de la section et ouvre la table
+	ptr += written;																	 // Avance le pointeur de tampon
 
 	// Lignes de la table
-	for (int i = 0; i < row_count; i++)
+	for (int i = 0; i < row_count; i++) // Parcourt les étiquettes et valeurs
 	{
 		int row_len = snprintf(ptr, end_ptr - ptr,
 							   "<tr><th>%s</th><td>%s</td></tr>",
-							   labels[i], values[i]);
-		ptr += row_len;
-		written += row_len;
+							   labels[i], values[i]); // Écrit une ligne de la table avec l'étiquette et la valeur
+		ptr += row_len;								  // Avance le pointeur de tampon
+		written += row_len;							  // Incrémente le compteur de caractères écrits
 	}
 
 	// Fermeture de la table
-	int end_len = snprintf(ptr, end_ptr - ptr, "</table>");
-	written += end_len;
+	int end_len = snprintf(ptr, end_ptr - ptr, "</table>"); // Écrit la fermeture de la table
+	written += end_len;										// Incrémente le compteur de caractères écrits
 
-	return written;
+	return written; // Retourne le nombre total de caractères écrits dans le tampon
 }
 
 // --- Page Infos Système & Réseau ("/device") ---
+// Cette fonction affiche les informations système et réseau du STM32 et du module ESP01.
+// Elle présente le firmware, le type de carte, la configuration WiFi et serveur sous forme de tableaux HTML.
+// Utile pour le diagnostic matériel, la vérification de la configuration embarquée et l'identification du matériel.
 static void page_device(int conn_id, const http_parsed_request_t *req)
 {
-	if (!req)
-		return;
-	printf("[TEST][INFO] Entrée dans page_device (conn_id=%d)\r\n", conn_id);
+	if (!req)																  // Vérifie si la requête est valide
+		return;																  // Si non, on sort de la fonction
+	printf("[TEST][INFO] Entrée dans page_device (conn_id=%d)\r\n", conn_id); // Affiche l'entrée dans la page d'informations système
 
-	const char PAGE_DEVICE_TITLE[] = "Infos Système & Réseau";
-	const char CSS_PAGE_DEVICE_SPECIFIC[] =
+	const char PAGE_DEVICE_TITLE[] = "Infos Système & Réseau"; // Titre de la page d'informations système
+	const char CSS_PAGE_DEVICE_SPECIFIC[] =					   // CSS spécifique à la page d'informations système
 		"table{margin:2em auto 1em auto;border-collapse:collapse;box-shadow:0 2px 8px #e0f5d8;background:#fff;}"
 		"th,td{padding:0.4em 1em;border:1px solid #e0f5d8;font-size:1em;}"
 		"th{background:#ffe066;color:#3a5d23;}"
 		"a.button{display:inline-block;padding:1em 2em;margin:1em 0.5em;background:#388e3c;color:#fff;text-decoration:none;border-radius:8px;font-size:1.1em;transition:background 0.2s,border 0.2s;box-shadow:0 2px 8px #e0f5d8;border:2px solid #388e3c;}"
 		"a.button.green{background:#28a745;border-color:#28a745;color:#fff;";
 
-	system_info_t sys_info;
-	collect_system_info(&sys_info);
+	system_info_t sys_info;			// Structure pour stocker les informations système
+	collect_system_info(&sys_info); // Collecte les informations système
 
-	char html[2048];
-	html[0] = '\0';
-	char *ptr = html;
-	char *end_ptr = html + sizeof(html);
+	char html[2048];					 // Tampon pour générer la page HTML
+	html[0] = '\0';						 // Initialise le tampon à vide
+	char *ptr = html;					 // Pointeur pour écrire dans le tampon HTML
+	char *end_ptr = html + sizeof(html); // Pointeur de fin pour éviter les débordements
 
-	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK)
-		return;
+	if (esp01_check_buffer_size(strlen(ptr) + 256, end_ptr - ptr) != ESP01_OK) // Vérifie si le tampon est assez grand
+		return;																   // Si non, on sort de la fonction
 
 	ptr += snprintf(ptr, end_ptr - ptr, "%s%s%s%s",
 					HTML_DOC_START, HTML_TITLE_START,
-					PAGE_DEVICE_TITLE, HTML_TITLE_END_STYLE_START);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_DEVICE_SPECIFIC);
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_STYLE_END_HEAD_BODY_CARD_START);
+					PAGE_DEVICE_TITLE, HTML_TITLE_END_STYLE_START);					// Début du document HTML, titre et début du style
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", PAGE_CSS);							// Ajoute le CSS commun
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", CSS_PAGE_DEVICE_SPECIFIC);			// Ajoute le CSS spécifique à la page d'informations système
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_STYLE_END_HEAD_BODY_CARD_START); // Fin du style, début du body et de la card
 
-	const char *sys_labels[] = {"Firmware ESP01", "Carte STM32"};
-	const char *sys_values[] = {sys_info.at_version, sys_info.stm32_type};
+	const char *sys_labels[] = {"Firmware ESP01", "Carte STM32"};		   // Étiquettes pour les informations système
+	const char *sys_values[] = {sys_info.at_version, sys_info.stm32_type}; // Valeurs pour les informations système
 	ptr += render_html_section(ptr, end_ptr - ptr, "Informations Système",
-							   sys_labels, sys_values, 2);
+							   sys_labels, sys_values, 2); // Rendu de la section Informations Système
 
-	const char *wifi_labels[] = {"Mode", "SSID"};
-	const char *wifi_values[] = {sys_info.wifi_mode, sys_info.wifi_ssid};
+	const char *wifi_labels[] = {"Mode", "SSID"};						  // Étiquettes pour les informations WiFi
+	const char *wifi_values[] = {sys_info.wifi_mode, sys_info.wifi_ssid}; // Valeurs pour les informations WiFi
 	ptr += render_html_section(ptr, end_ptr - ptr, "Configuration WiFi",
-							   wifi_labels, wifi_values, 2);
+							   wifi_labels, wifi_values, 2); // Rendu de la section Configuration WiFi
 
-	char port_str[8];
-	snprintf(port_str, sizeof(port_str), "%u", sys_info.server_port);
+	char port_str[8];												  // Tampon pour le port du serveur
+	snprintf(port_str, sizeof(port_str), "%u", sys_info.server_port); // Convertit le port en chaîne de caractères
 
-	const char *server_labels[] = {"Port", "Multi-connexion"};
-	const char *server_values[] = {port_str, sys_info.multi_conn};
+	const char *server_labels[] = {"Port", "Multi-connexion"};	   // Étiquettes pour les informations du serveur
+	const char *server_values[] = {port_str, sys_info.multi_conn}; // Valeurs pour les informations du serveur
 	ptr += render_html_section(ptr, end_ptr - ptr, "Configuration Serveur",
-							   server_labels, server_values, 2);
+							   server_labels, server_values, 2); // Rendu de la section Configuration Serveur
 
-	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>");
-	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);
+	ptr += snprintf(ptr, end_ptr - ptr, "<a class='button green' href='/'>Accueil</a>"); // Bouton pour revenir à la page d'accueil
+	ptr += snprintf(ptr, end_ptr - ptr, "%s", HTML_CARD_END_BODY_END);					 // Termine la card et le body du document HTML
 
-	printf("[TEST][INFO] Sortie de page_device, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html));
-	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));
+	printf("[TEST][INFO] Sortie de page_device, réponse envoyée sur conn_id=%d, taille=%d\r\n", conn_id, (int)strlen(html)); // Affiche la taille de la réponse
+	esp01_send_http_response(conn_id, 200, "text/html; charset=UTF-8", html, strlen(html));									 // Envoie la page générée au client
 }
-
 /* USER CODE END 0 */
 
 /**

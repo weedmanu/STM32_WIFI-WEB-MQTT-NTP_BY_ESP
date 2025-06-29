@@ -81,7 +81,7 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-// Pas de prototypes utilisateur spécifiques ici
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -127,183 +127,183 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_Delay(1000);
-  ESP01_Status_t status;
-  char buf[ESP01_MAX_RESP_BUF];
+  HAL_Delay(1000);              // Attente pour stabiliser la console série
+  ESP01_Status_t status;        // Variable pour stocker le statut des opérations
+  char buf[ESP01_MAX_RESP_BUF]; // Tampon pour les réponses des commandes AT
 
-  printf("\n[TEST][INFO] === Début des tests du driver STM32_WifiESP ===\r\n");
-  HAL_Delay(500);
+  printf("\n[TEST][INFO] === Début des tests du driver STM32_WifiESP ===\r\n"); // Message d'introduction
+  HAL_Delay(500);                                                               // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Initialisation du driver ESP01 ===\r\n");
-  status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);
-  printf("[TEST][INFO] Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status));
-  if (status != ESP01_OK)
+  printf("\n[TEST][INFO] === Initialisation du driver ESP01 ===\r\n");                            // Message d'initialisation
+  status = esp01_init(&huart1, &huart2, esp01_dma_rx_buf, ESP01_DMA_RX_BUF_SIZE);                 // Initialisation du driver
+  printf("[TEST][INFO] Initialisation du driver ESP01 : %s\r\n", esp01_get_error_string(status)); // Affichage du statut
+  if (status != ESP01_OK)                                                                         // Vérification de l'état d'initialisation
   {
-    printf("[TEST][ERROR] Échec de l'initialisation du driver\r\n");
-    Error_Handler();
+    printf("[TEST][ERROR] Échec de l'initialisation du driver\r\n"); // Message d'erreur si l'initialisation échoue
+    Error_Handler();                                                 // Appel de la fonction d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Reset logiciel (AT+RST) ===\r\n");
-  status = esp01_reset();
-  printf("[TEST][INFO] Reset logiciel : %s\r\n", esp01_get_error_string(status));
-  if (status != ESP01_OK)
+  printf("\n[TEST][INFO] === Reset logiciel (AT+RST) ===\r\n");                   // Message de reset logiciel
+  status = esp01_reset();                                                         // Appel de la fonction de reset logiciel
+  printf("[TEST][INFO] Reset logiciel : %s\r\n", esp01_get_error_string(status)); // Affichage du statut du reset
+  if (status != ESP01_OK)                                                         // Vérification de l'état du reset
   {
-    printf("[TEST][ERROR] Échec du reset logiciel\r\n");
+    printf("[TEST][ERROR] Échec du reset logiciel\r\n"); // Message d'erreur si le reset échoue
   }
-  HAL_Delay(1000);
+  HAL_Delay(1000); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Lecture version firmware ESP01 (AT+GMR) ===\r\n");
-  char resp[512] = {0};
-  status = esp01_get_at_version(resp, sizeof(resp));
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture version firmware ESP01 (AT+GMR) ===\r\n"); // Message de lecture de la version du firmware
+  char resp[512] = {0};                                                         // Tampon pour la réponse de la commande AT
+  status = esp01_get_at_version(resp, sizeof(resp));                            // Appel de la fonction pour lire la version du firmware
+  if (status == ESP01_OK)                                                       // Vérification de l'état de la lecture de la version
   {
-    uint8_t line_count = esp01_display_firmware_info(resp);
-    printf("[TEST][INFO] Nombre de lignes d'informations extraites : %d\r\n", line_count);
+    uint8_t line_count = esp01_display_firmware_info(resp);                                // Affichage des informations de version
+    printf("[TEST][INFO] Nombre de lignes d'informations extraites : %d\r\n", line_count); // Affichage du nombre de lignes extraites
   }
-  else
+  else // Si la lecture de la version échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture de la version firmware : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture de la version firmware : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Lecture configuration UART ===\r\n");
-  status = esp01_get_uart_config(buf, sizeof(buf));
-  char uart_str[ESP01_MAX_RESP_BUF];
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture configuration UART ===\r\n"); // Message de lecture de la configuration UART
+  status = esp01_get_uart_config(buf, sizeof(buf));                // Appel de la fonction pour lire la configuration UART
+  char uart_str[ESP01_MAX_RESP_BUF];                               // Tampon pour la chaîne de configuration UART
+  if (status == ESP01_OK)                                          // Si la lecture de la configuration UART réussit
   {
-    esp01_uart_config_to_string(buf, uart_str, sizeof(uart_str));
-    printf("[TEST][INFO] Configuration UART : %s\r\n", uart_str);
+    esp01_uart_config_to_string(buf, uart_str, sizeof(uart_str)); // Conversion de la configuration en chaîne lisible
+    printf("[TEST][INFO] Configuration UART : %s\r\n", uart_str); // Affichage de la configuration UART
   }
-  else
+  else // Si la lecture de la configuration UART échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture de configuration UART : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture de configuration UART : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Lecture mode sommeil ===\r\n");
-  int sleep_mode = 0;
-  status = esp01_get_sleep_mode(&sleep_mode);
-  char sleep_str[ESP01_MAX_RESP_BUF];
-  esp01_sleep_mode_to_string(sleep_mode, sleep_str, sizeof(sleep_str));
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture mode sommeil ===\r\n");            // Message de lecture du mode sommeil
+  int sleep_mode = 0;                                                   // Variable pour stocker le mode sommeil
+  status = esp01_get_sleep_mode(&sleep_mode);                           // Appel de la fonction pour lire le mode sommeil
+  char sleep_str[ESP01_MAX_RESP_BUF];                                   // Tampon pour la chaîne de mode sommeil
+  esp01_sleep_mode_to_string(sleep_mode, sleep_str, sizeof(sleep_str)); // Conversion du mode sommeil en chaîne lisible
+  if (status == ESP01_OK)                                               // Si la lecture du mode sommeil réussit
   {
-    printf("[TEST][INFO] Mode sommeil : %s\r\n", sleep_str);
+    printf("[TEST][INFO] Mode sommeil : %s\r\n", sleep_str); // Affichage du mode sommeil
   }
-  else
+  else // Si la lecture du mode sommeil échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture du mode sommeil : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture du mode sommeil : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Lecture puissance RF ===\r\n");
-  int rf_dbm = 0;
-  status = esp01_get_rf_power(&rf_dbm);
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture puissance RF ===\r\n"); // Message de lecture de la puissance RF
+  int rf_dbm = 0;                                            // Variable pour stocker la puissance RF
+  status = esp01_get_rf_power(&rf_dbm);                      // Appel de la fonction pour lire la puissance RF
+  if (status == ESP01_OK)                                    // Si la lecture de la puissance RF réussit
   {
-    printf("[TEST][INFO] Puissance RF : %d dBm\r\n", rf_dbm);
+    printf("[TEST][INFO] Puissance RF : %d dBm\r\n", rf_dbm); // Affichage de la puissance RF
   }
-  else
+  else // Si la lecture de la puissance RF échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture de la puissance RF : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture de la puissance RF : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Lecture niveau log système ===\r\n");
-  int syslog = 0;
-  status = esp01_get_syslog(&syslog);
-  char syslog_str[ESP01_MAX_RESP_BUF];
-  esp01_syslog_to_string(syslog, syslog_str, sizeof(syslog_str));
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture niveau log système ===\r\n"); // Message de lecture du niveau de log système
+  int syslog = 0;                                                  // Variable pour stocker le niveau de log
+  status = esp01_get_syslog(&syslog);                              // Appel de la fonction pour lire le niveau de log
+  char syslog_str[ESP01_MAX_RESP_BUF];                             // Tampon pour la chaîne du niveau de log
+  esp01_syslog_to_string(syslog, syslog_str, sizeof(syslog_str));  // Conversion du niveau de log en chaîne lisible
+  if (status == ESP01_OK)                                          // Si la lecture du niveau de log réussit
   {
-    printf("[TEST][INFO] Niveau de log : %s\r\n", syslog_str);
+    printf("[TEST][INFO] Niveau de log : %s\r\n", syslog_str); // Affichage du niveau de log
   }
-  else
+  else // Si la lecture du niveau de log échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture du niveau de log : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture du niveau de log : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
-  printf("\n[TEST][INFO] === Lecture RAM libre ===\r\n");
-  uint32_t free_ram = 0, min_ram = 0;
-  status = esp01_get_sysram(&free_ram, &min_ram);
-  char ram_str[ESP01_MAX_RESP_BUF];
-  if (status == ESP01_OK)
-  {
-    esp01_sysram_to_string(free_ram, min_ram, ram_str, sizeof(ram_str));
-    printf("[TEST][INFO] RAM libre : %s\r\n", ram_str);
-  }
-  else
-  {
-    printf("[TEST][ERROR] Échec de la lecture de la RAM libre : %s\r\n", esp01_get_error_string(status));
-  }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Lecture stockage système ===\r\n");
-  uint32_t sysstore = 0;
-  status = esp01_get_sysstore(&sysstore);
-  char sysstore_str[ESP01_MAX_RESP_BUF];
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture RAM libre ===\r\n"); // Message de lecture de la RAM libre
+  uint32_t free_ram = 0, min_ram = 0;                     // Variables pour stocker la RAM libre et minimale
+  status = esp01_get_sysram(&free_ram, &min_ram);         // Appel de la fonction pour lire la RAM
+  char ram_str[ESP01_MAX_RESP_BUF];                       // Tampon pour la chaîne de RAM
+  if (status == ESP01_OK)                                 // Si la lecture de la RAM réussit
   {
-    esp01_sysstore_to_string(sysstore, sysstore_str, sizeof(sysstore_str));
-    printf("[TEST][INFO] %s\r\n", sysstore_str);
+    esp01_sysram_to_string(free_ram, min_ram, ram_str, sizeof(ram_str)); // Conversion des valeurs RAM en chaîne lisible
+    printf("[TEST][INFO] RAM libre : %s\r\n", ram_str);                  // Affichage de la RAM libre
   }
-  else
+  else // Si la lecture de la RAM échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture du stockage système : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture de la RAM libre : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Lecture Flash système (partitions détaillées) ===\r\n");
-  char sysflash_resp[512] = {0}; // ou 2048, ou 4096 si tu veux être large
-  status = esp01_get_sysflash(sysflash_resp, sizeof(sysflash_resp));
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture stockage système ===\r\n"); // Message de lecture du stockage système
+  uint32_t sysstore = 0;                                         // Variable pour stocker le stockage système
+  status = esp01_get_sysstore(&sysstore);                        // Appel de la fonction pour lire le stockage système
+  char sysstore_str[ESP01_MAX_RESP_BUF];                         // Tampon pour la chaîne du stockage système
+  if (status == ESP01_OK)                                        // Si la lecture du stockage système réussit
   {
-    // Affichage utilisateur, pas de réponse brute ici (comme pour GMR)
-    printf("[TEST][INFO] Table SYSFLASH récupérée avec succès\r\n");
-    uint8_t part_count = esp01_display_sysflash_partitions(sysflash_resp);
-    printf("[TEST][INFO] Nombre de partitions extraites : %d\r\n", part_count);
+    esp01_sysstore_to_string(sysstore, sysstore_str, sizeof(sysstore_str)); // Conversion du stockage en chaîne lisible
+    printf("[TEST][INFO] %s\r\n", sysstore_str);                            // Affichage du stockage système
   }
-  else
+  else // Si la lecture du stockage système échoue
   {
-    printf("[TEST][ERROR] Impossible de récupérer la table SYSFLASH : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture du stockage système : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
+  }
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
+
+  printf("\n[TEST][INFO] === Lecture Flash système (partitions détaillées) ===\r\n"); // Message de lecture de la Flash système
+  char sysflash_resp[512] = {0};                                                      // Tampon pour la réponse de la commande SYSFLASH
+  status = esp01_get_sysflash(sysflash_resp, sizeof(sysflash_resp));                  // Appel de la fonction pour lire la Flash système
+  if (status == ESP01_OK)                                                             // Si la lecture de la Flash système réussit
+  {
+    printf("[TEST][INFO] Table SYSFLASH récupérée avec succès\r\n");            // Message de succès
+    uint8_t part_count = esp01_display_sysflash_partitions(sysflash_resp);      // Affichage des partitions extraites
+    printf("[TEST][INFO] Nombre de partitions extraites : %d\r\n", part_count); // Affichage du nombre de partitions
+  }
+  else // Si la lecture de la Flash système échoue
+  {
+    printf("[TEST][ERROR] Impossible de récupérer la table SYSFLASH : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
 
-  printf("\n[TEST][INFO] === Lecture RAM utilisateur ===\r\n");
-  uint32_t userram = 0;
-  status = esp01_get_userram(&userram);
-  char userram_str[ESP01_MAX_RESP_BUF];
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Lecture RAM utilisateur ===\r\n"); // Message de lecture de la RAM utilisateur
+  uint32_t userram = 0;                                         // Variable pour stocker la RAM utilisateur
+  status = esp01_get_userram(&userram);                         // Appel de la fonction pour lire la RAM utilisateur
+  char userram_str[ESP01_MAX_RESP_BUF];                         // Tampon pour la chaîne de RAM utilisateur
+  if (status == ESP01_OK)                                       // Si la lecture de la RAM utilisateur réussit
   {
-    esp01_userram_to_string(userram, userram_str, sizeof(userram_str));
-    printf("[TEST][INFO] %s\r\n", userram_str);
+    esp01_userram_to_string(userram, userram_str, sizeof(userram_str)); // Conversion de la RAM utilisateur en chaîne lisible
+    printf("[TEST][INFO] %s\r\n", userram_str);                         // Affichage de la RAM utilisateur
   }
-  else
+  else // Si la lecture de la RAM utilisateur échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture de la RAM utilisateur : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture de la RAM utilisateur : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Liste des commandes AT ===\r\n");
-  char cmd_list[4096];
-  status = esp01_get_cmd_list(cmd_list, sizeof(cmd_list));
-  if (status == ESP01_OK)
+  printf("\n[TEST][INFO] === Liste des commandes AT ===\r\n"); // Message de lecture de la liste des commandes AT
+  char cmd_list[4096];                                         // Tampon pour la liste des commandes AT
+  status = esp01_get_cmd_list(cmd_list, sizeof(cmd_list));     // Appel de la fonction pour lire la liste des commandes AT
+  if (status == ESP01_OK)                                      // Si la lecture de la liste réussit
   {
-    printf("[TEST][INFO] Liste des commandes AT :\r\n%s\r\n", cmd_list);
+    printf("[TEST][INFO] Liste des commandes AT :\r\n%s\r\n", cmd_list); // Affichage de la liste des commandes AT
   }
-  else
+  else // Si la lecture de la liste échoue
   {
-    printf("[TEST][ERROR] Échec de la lecture de la liste des commandes AT : %s\r\n", esp01_get_error_string(status));
+    printf("[TEST][ERROR] Échec de la lecture de la liste des commandes AT : %s\r\n", esp01_get_error_string(status)); // Message d'erreur
   }
-  HAL_Delay(500);
+  HAL_Delay(500); // Pause pour laisser le temps de lire le message
 
-  printf("\n[TEST][INFO] === Restauration paramètres usine (AT+RESTORE) ===\r\n");
-  status = esp01_restore();
-  printf("[TEST][INFO] Restauration usine : %s\r\n", esp01_get_error_string(status));
-  if (status != ESP01_OK)
+  printf("\n[TEST][INFO] === Restauration paramètres usine (AT+RESTORE) ===\r\n");    // Message de restauration usine
+  status = esp01_restore();                                                           // Appel de la fonction de restauration usine
+  printf("[TEST][INFO] Restauration usine : %s\r\n", esp01_get_error_string(status)); // Affichage du statut de la restauration
+  if (status != ESP01_OK)                                                             // Si la restauration échoue
   {
-    printf("[TEST][ERROR] Échec de la restauration usine\r\n");
+    printf("[TEST][ERROR] Échec de la restauration usine\r\n"); // Message d'erreur
   }
-  printf("\n[TEST][INFO] === Fin des tests du driver STM32_WifiESP ===\r\n");
+  printf("\n[TEST][INFO] === Fin des tests du driver STM32_WifiESP ===\r\n"); // Message de fin de test
   /* USER CODE END 2 */
 
   /* Infinite loop */
