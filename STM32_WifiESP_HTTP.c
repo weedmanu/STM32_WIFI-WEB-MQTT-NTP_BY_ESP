@@ -33,6 +33,7 @@
 #include <string.h>             // Pour les fonctions de manipulation de chaînes (memcpy, memset, etc.)
 #include <stdio.h>              // Pour les fonctions d'entrée/sortie (snprintf, sscanf, etc.)
 #include <stdbool.h>            // Pour le type booléen
+#include <stdint.h>				// Pout le type int
 
 // ==================== DEFINES ====================
 #define ESP01_CONN_TIMEOUT_MS 30000 ///< Timeout de connexion TCP (ms)
