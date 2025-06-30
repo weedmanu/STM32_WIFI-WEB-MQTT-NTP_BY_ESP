@@ -924,54 +924,6 @@ ESP01_Status_t esp01_parse_string_after(const char *text, const char *pattern, c
     }
     return ESP01_OK; // Succès
 }
-{
-    VALIDATE_PARAM(esp01_is_valid_ptr(text) && esp01_is_valid_ptr(pattern) && esp01_is_valid_ptr(output) && size > 0, ESP01_INVALID_PARAM); // Vérifie la validité des paramètres
-    char *start = strstr(text, pattern);                                                                                                    // Cherche le motif dans la chaîne d'entrée
-    if (!start)                                                                                                                             // Si le motif n'est pas trouvé
-        ESP01_RETURN_ERROR("PARSE_STR", ESP01_FAIL);                                                                                        // Retourne une erreur
-    start = strchr(start, ':');                                                                                                             // Cherche le caractère ':' après le motif
-    start++;                                                                                                                                // Passe le caractère ':'
-    size_t len = 0;                                                                                                                         // Initialise la longueur à 0
-    while (start[len] && start[len] != '\r' && start[len] != '\n' && len < size - 1)                                                        // Parcourt la sous-chaîne jusqu'à fin de ligne ou taille max
-        len++;                                                                                                                              // Incrémente la longueur
-    if (esp01_check_buffer_size(len, size - 1) != ESP01_OK)                                                                                 // Vérifie que la taille ne dépasse pas le buffer
-        ESP01_RETURN_ERROR("PARSE_STR", ESP01_BUFFER_OVERFLOW);                                                                             // Retourne une erreur de débordement
-    if (len < size)                                                                                                                         // Si la longueur est correcte
-    {
-        memcpy(output, start, len); // Copie la sous-chaîne dans le buffer de sortie
-        output[len] = '\0';         // Termine la chaîne
-        esp01_trim_string(output);  // Supprime les espaces en début/fin
-    }
-    else
-    {
-        output[0] = '\0'; // Si erreur, chaîne vide
-    }
-    return ESP01_OK; // Succès
-}
-{
-    VALIDATE_PARAM(esp01_is_valid_ptr(text) && esp01_is_valid_ptr(pattern) && esp01_is_valid_ptr(output) && size > 0, ESP01_INVALID_PARAM);
-    char *start = strstr(text, pattern);
-    if (!start)
-        ESP01_RETURN_ERROR("PARSE_STR", ESP01_FAIL);
-    start = strchr(start, ':');
-    start++;
-    size_t len = 0;
-    while (start[len] && start[len] != '\r' && start[len] != '\n' && len < size - 1)
-        len++;
-    if (esp01_check_buffer_size(len, size - 1) != ESP01_OK)
-        ESP01_RETURN_ERROR("PARSE_STR", ESP01_BUFFER_OVERFLOW);
-    if (len < size)
-    {
-        memcpy(output, start, len);
-        output[len] = '\0';
-        esp01_trim_string(output);
-    }
-    else
-    {
-        output[0] = '\0';
-    }
-    return ESP01_OK;
-}
 
 /**
  * @brief Extracts a quoted value from a source string following a specific motif.
