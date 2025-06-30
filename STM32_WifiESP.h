@@ -214,6 +214,7 @@ ESP01_Status_t esp01_restore(void);
  * @brief Récupère la version AT du firmware (AT+GMR)
  */
 ESP01_Status_t esp01_get_at_version(char *version_buf, size_t buf_size);
+
 /**
  * @brief Affiche les infos firmware à partir de la réponse AT+GMR
  */
